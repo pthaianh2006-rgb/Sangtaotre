@@ -1,0 +1,47 @@
+/* Shared accessibility, connection feedback and responsive layout. */
+:root { color-scheme: light; }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea { touch-action: manipulation; }
+button:disabled { opacity: .6; cursor: wait; transform: none; }
+:focus-visible { outline: 3px solid #F59E0B !important; outline-offset: 3px; }
+input, select, textarea { max-width: 100%; }
+img { max-width: 100%; }
+.grid-layout > *, .main-grid > *, .container, .card, .section-box { min-width: 0; }
+.table-scroll, .responsive-table { overflow-x: auto; overscroll-behavior-inline: contain; }
+.table-scroll:focus-visible, .responsive-table:focus-visible { outline-offset: -3px; }
+th { text-align: start; }
+.rehab-status { position: fixed; right: 16px; bottom: 16px; z-index: 100; max-width: min(460px, calc(100vw - 32px)); padding: 13px 18px; border: 1px solid #93C5FD; border-radius: 12px; background: #EFF6FF; color: #1E3A8A; box-shadow: 0 8px 24px #0002; line-height: 1.5; }
+.rehab-status[data-kind="error"] { background: #FEF2F2; color: #991B1B; border-color: #FCA5A5; }
+.rehab-status[hidden] { display: none; }
+.empty-state { padding: 20px; color: #53637B; text-align: center; }
+.form-panel[hidden] { display: none; }
+.tabs button.tab { width: auto; border: 0; background: transparent; box-shadow: none; }
+.tabs button.tab.active { background: var(--primary); }
+.logout-form { display: inline-flex; margin: 0; }
+.demo-touch { display: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 640px) {
+  body { padding: 12px !important; }
+  .card, .container, .section-box, .panel { padding: 18px !important; }
+  .container > .card { padding: 16px !important; }
+  .header, .header-card { padding: 20px !important; gap: 16px; flex-wrap: wrap; }
+  .topbar { font-size: 17px !important; }
+  .stepper { gap: 6px !important; }
+  .step { padding: 10px 6px !important; font-size: 12px !important; }
+  .live-row, .cal-buttons, .compare-box { flex-wrap: wrap; gap: 12px; }
+  .compare-item { padding: 12px !important; min-width: 100px; }
+  .compare-item .big { font-size: 30px !important; }
+  .leg-controls, #usbBox, #wifiBox { flex-wrap: wrap; }
+  #portSelect { min-width: 140px; }
+  .meta-info { gap: 8px !important; padding: 14px !important; }
+  table { min-width: 480px; }
+  button, select, .btn, .btn-back, .view-btn { min-height: 44px; }
+  .chart-box { height: auto !important; }
+  .demo-touch { display: block; width: 100%; margin-top: 10px; background: #0E82FD; color: white; user-select: none; touch-action: none; }
+  #view { height: 440px !important; }
+  .hud .pill { padding: 8px !important; font-size: 12px !important; }
+  .center { font-size: 34px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

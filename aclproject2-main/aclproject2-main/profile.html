@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BME Rehab - Biểu đồ tiến trình phục hồi</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary:#0E82FD; --teal:#14C0C6; --amber:#F59E0B; --ink:#1B2559; --muted:#6B7A99; --line:#E6ECF5; --bg:#F3F7FF; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Poppins','Segoe UI',Arial,sans-serif; background: var(--bg); color: var(--ink); margin: 0; padding: 40px; }
+        .container { max-width: 920px; margin: auto; display: flex; flex-direction: column; gap: 24px; }
+        .header-card { background: linear-gradient(135deg,#0E82FD,#14C0C6); color:#fff; padding: 28px; border-radius: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 16px 36px rgba(14,130,253,.2); }
+        .chart-box { background: #fff; padding: 26px; border-radius: 20px; border: 1px solid var(--line); height: 400px; box-shadow: 0 16px 36px rgba(14,130,253,.07); }
+        .btn-back { background: rgba(255,255,255,.18); color: white; padding: 11px 20px; border-radius: 12px; text-decoration: none; font-weight: 600; }
+        h1, h3 { font-weight: 700; }
+    </style>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <script src="{{ url_for('static', filename='rehab.js') }}"></script>
+</head>
+<body>
+    <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
+    <div class="container">
+        <div class="header-card">
+            <div>
+                <h1 style="margin:0; font-size:24px;">📈 Biểu đồ tiến trình gập gối cá nhân</h1>
+                <p style="margin:6px 0 0 0; color:rgba(255,255,255,.88);">Bệnh nhân: <b>{{ user[1] }}</b> | Giai đoạn: <b>Tuần {{ user[3] }}</b></p>
+            </div>
+            <a href="/dashboard" class="btn-back">⬅ Quay lại phòng tập</a>
+        </div>
+
+        <div class="chart-box">
+            <h3 style="margin:0 0 15px 0; color:var(--primary);">So sánh ROM lớn nhất theo ngày — Camera vs Cảm biến (độ °)</h3>
+            <div style="position: relative; height: 300px;">
+                <canvas id="kneeChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <script>
+        const ctx = document.getElementById('kneeChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: {{ dates | safe }},
+                datasets: [
+                    {
+                        label: '📷 Camera (°)',
+                        data: {{ cam_angles | safe }},
+                        borderColor: '#0E82FD',
+                        backgroundColor: 'rgba(14, 130, 253, 0.08)',
+                        borderWidth: 3, pointBackgroundColor: '#0E82FD', pointRadius: 5, tension: 0.15, fill: false, spanGaps: true
+                    },
+                    {
+                        label: '🦵 Cảm biến (°)',
+                        data: {{ imu_angles | safe }},
+                        borderColor: '#16A34A',
+                        backgroundColor: 'rgba(22, 163, 74, 0.08)',
+                        borderWidth: 3, pointBackgroundColor: '#16A34A', pointRadius: 5, tension: 0.15, fill: false, spanGaps: true
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#1B2559' } } },
+                scales: {
+                    y: { beginAtZero: true, max: 180, grid: { color: '#E6ECF5' }, ticks: { color: '#6B7A99', stepSize: 30 } },
+                    x: { grid: { color: '#E6ECF5' }, ticks: { color: '#6B7A99' } }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

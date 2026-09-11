@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BME Rehab - Chi tiết hồ sơ bệnh nhân</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary:#0E82FD; --teal:#14C0C6; --green:#16A34A; --amber:#D97706; --ink:#1B2559; --muted:#6B7A99; --line:#E6ECF5; --bg:#F3F7FF; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Poppins','Segoe UI',Arial,sans-serif; background: var(--bg); margin: 0; padding: 40px; color: var(--ink); }
+        .container { max-width: 820px; margin: auto; background: white; padding: 32px; border-radius: 20px; border: 1px solid var(--line); box-shadow: 0 16px 36px rgba(14,130,253,.07); }
+        .meta-info { background: #F1F5FC; padding: 22px; border-radius: 14px; margin-bottom: 25px; display: flex; gap: 40px; flex-wrap: wrap; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+        th { background: linear-gradient(135deg,#0E82FD,#14C0C6); color: white; padding: 13px; text-align: left; font-weight: 600; }
+        th:first-child { border-radius: 10px 0 0 0; } th:last-child { border-radius: 0 10px 0 0; }
+        td { padding: 13px; border-bottom: 1px solid var(--line); }
+        tr:hover td { background: #FBFCFF; }
+        .btn-back { display: inline-block; background: #fff; color: var(--ink); padding: 11px 20px; border-radius: 12px; text-decoration: none; font-weight: 600; margin-bottom: 20px; border: 1px solid var(--line); box-shadow: 0 6px 16px rgba(14,130,253,.06); }
+        h2, h3 { font-weight: 700; }
+        .advice-box { background: #FFFBEB; border: 1px solid #FDE9C8; padding: 22px; border-radius: 16px; margin-bottom: 25px; border-left: 5px solid var(--amber); }
+        .advice-textarea { width: 100%; height: 84px; padding: 12px; border-radius: 10px; border: 1.5px solid var(--line); font-family: inherit; font-size: 14px; box-sizing: border-box; resize: vertical; }
+        .advice-textarea:focus { outline: none; border-color: var(--amber); }
+        .btn-submit-advice { background: var(--amber); color: white; border: none; padding: 11px 20px; border-radius: 10px; font-weight: 600; cursor: pointer; margin-top: 12px; transition: .2s; font-family: inherit; }
+        .btn-submit-advice:hover { background: #B45309; }
+    </style>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <script src="{{ url_for('static', filename='rehab.js') }}"></script>
+</head>
+<body>
+    <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
+    <div style="max-width: 820px; margin: auto;">
+        <a href="/admin" class="btn-back">⬅ Quay lại danh sách tổng</a>
+        <div class="container">
+            <h2 style="color:var(--primary); margin-top:0;">📋 Chi tiết bệnh án phục hồi chức năng</h2>
+
+            <div class="meta-info">
+                <p>Bệnh nhân: <b style="color:var(--primary); font-size:18px;">{{ user[1] }}</b></p>
+                <p>Tuổi: <b>{{ user[2] }} tuổi</b></p>
+                <p>Tiến trình phẫu thuật: <b>Tuần {{ user[3] }}</b></p>
+            </div>
+
+            <div class="advice-box">
+                <h3 style="margin-top:0; color:#B45309; font-size:16px;">✍️ Chỉ định điều trị & Lời khuyên chuyên môn của Bác sĩ</h3>
+                <form action="/admin/save_advice/{{ user[0] }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label class="sr-only" for="doctor-advice">Lời khuyên dành cho bệnh nhân</label>
+                    <textarea id="doctor-advice" name="doctor_advice" class="advice-textarea" maxlength="5000" placeholder="Nhập lời khuyên, bài tập bổ sung hoặc dặn dò riêng dành cho bệnh nhân này tại đây...">{{ user[5] if user[5] else '' }}</textarea>
+                    <button type="submit" class="btn-submit-advice">💾 Lưu và gửi lời khuyên tới bệnh nhân</button>
+                </form>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <h3 style="color:var(--ink); margin:0;">🕒 Toàn bộ nhật ký lịch sử đo góc gập gối</h3>
+                <div style="display:flex; gap:8px;">
+                    <a href="/export_compare/{{ user[0] }}" style="background:var(--primary); color:#fff; padding:10px 16px; border-radius:10px; text-decoration:none; font-weight:600; font-size:13px;">⬇ Xuất Excel (có biểu đồ)</a>
+                    <button onclick="deleteAllPatient({{ user[0] }})" style="background:#FDECEC; color:#E0413A; border:none; padding:10px 16px; border-radius:10px; cursor:pointer; font-weight:600; font-size:13px; font-family:inherit;">🗑️ Xóa tất cả</button>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Lượt đo</th>
+                        <th>Biên độ góc ROM đạt được</th>
+                        <th>Nguồn đo</th>
+                        <th>Thời điểm ghi nhận hệ thống</th>
+                        <th>Xóa</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in history %}
+                    <tr>
+                        <td>Lượt #{{ loop.index }}</td>
+                        <td style="color:var(--green); font-weight:700; font-size:16px;">{{ row[0] }}°</td>
+                        <td style="color:var(--muted);">{{ '🦵 Cảm biến IMU' if row[2] == 'imu' else '📷 Camera' }}</td>
+                        <td style="color:var(--muted);">{{ row[1] }}</td>
+                        <td><button onclick="deleteMeasurement({{ row[3] }}, this)" style="background:none; border:none; cursor:pointer; font-size:16px;" title="Xóa lượt đo này">🗑️</button></td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" style="text-align:center; color:var(--muted); padding:30px;">Bệnh nhân này chưa thực hiện lượt đo đạc nào.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        function deleteMeasurement(mid, btn) {
+            if (!confirm('Xóa lượt đo này khỏi hồ sơ bệnh nhân?')) return;
+            Rehab.action(btn, async () => {
+                await Rehab.api('/delete_measurement/' + encodeURIComponent(mid), { method: 'POST' });
+                location.reload();
+            }).catch(error => Rehab.notify(error.message));
+        }
+
+        function deleteAllPatient(pid) {
+            if (!confirm('Xóa TẤT CẢ lượt đo của bệnh nhân này? Không thể hoàn tác.')) return;
+            Rehab.action(document.activeElement, async () => {
+                await Rehab.api('/delete_all/' + encodeURIComponent(pid), { method: 'POST' });
+                location.reload();
+            }).catch(error => Rehab.notify(error.message));
+        }
+    </script>
+</body>
+</html>

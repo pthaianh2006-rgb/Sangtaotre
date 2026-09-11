@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BME Rehab - Phục hồi khớp gối | Đăng nhập</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0E82FD;
+            --primary-dark: #0A6AD4;
+            --teal: #14C0C6;
+            --ink: #1B2559;
+            --muted: #6B7A99;
+            --line: #E6ECF5;
+            --bg: #F3F7FF;
+        }
+        * { box-sizing: border-box; }
+        body { font-family: 'Poppins', 'Segoe UI', Arial, sans-serif; background: var(--bg); margin: 0; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; color: var(--ink); }
+        .card { display: grid; grid-template-columns: 1fr 1fr; width: 920px; max-width: 100%; background: #fff; border-radius: 24px; overflow: hidden; box-shadow: 0 30px 60px rgba(14,130,253,0.12); }
+
+        /* Cot trai - thuong hieu */
+        .brand { background: linear-gradient(150deg, #0E82FD 0%, #14C0C6 100%); color: #fff; padding: 48px 40px; position: relative; overflow: hidden; }
+        .brand::after { content: ""; position: absolute; right: -60px; bottom: -60px; width: 220px; height: 220px; background: rgba(255,255,255,0.10); border-radius: 50%; }
+        .brand::before { content: ""; position: absolute; right: 40px; top: -40px; width: 120px; height: 120px; background: rgba(255,255,255,0.08); border-radius: 50%; }
+        .brand .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; letter-spacing: .3px; }
+        .brand .logo span { background: #fff; color: var(--primary); width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
+        .brand h2 { font-size: 30px; line-height: 1.25; margin: 38px 0 14px; font-weight: 700; }
+        .brand p { color: rgba(255,255,255,.88); font-size: 14px; line-height: 1.7; }
+        .brand .feats { margin-top: 28px; display: flex; flex-direction: column; gap: 14px; }
+        .brand .feat { display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 500; }
+        .brand .feat i { width: 30px; height: 30px; background: rgba(255,255,255,.18); border-radius: 9px; display: grid; place-items: center; font-style: normal; }
+
+        /* Cot phai - form */
+        .panel { padding: 46px 44px; }
+        .panel h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; }
+        .subtitle { color: var(--muted); margin-bottom: 26px; font-size: 14px; }
+        .tabs { display: flex; gap: 6px; background: #F1F5FC; padding: 6px; border-radius: 12px; margin-bottom: 26px; }
+        .tab { flex: 1; text-align: center; padding: 11px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 14px; border-radius: 9px; transition: .2s; }
+        .tab.active { color: #fff; background: var(--primary); box-shadow: 0 6px 14px rgba(14,130,253,.30); }
+        .form-panel { display: none; }
+        .form-panel.active { display: block; animation: fade .3s; }
+        @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        label { display: block; margin-bottom: 7px; color: var(--ink); font-size: 13px; font-weight: 600; }
+        input { width: 100%; padding: 13px 15px; margin-bottom: 16px; border-radius: 11px; border: 1.5px solid var(--line); box-sizing: border-box; font-family: inherit; font-size: 14px; color: var(--ink); transition: .2s; background: #FBFCFF; }
+        input:focus { outline: none; border-color: var(--primary); background: #fff; box-shadow: 0 0 0 4px rgba(14,130,253,.10); }
+        button { width: 100%; padding: 14px; border: none; border-radius: 11px; background: var(--primary); color: white; font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; transition: .2s; box-shadow: 0 10px 20px rgba(14,130,253,.25); }
+        button:hover { background: var(--primary-dark); transform: translateY(-1px); }
+        .alert { padding: 12px 14px; border-radius: 11px; margin-bottom: 20px; font-size: 14px; text-align: center; font-weight: 500; }
+        .alert-success { background: #E3F9EC; color: #0F9D58; }
+        .alert-danger { background: #FDECEC; color: #E0413A; }
+        @media (max-width: 760px) { .card { grid-template-columns: 1fr; } .brand { display: none; } }
+    </style>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <script src="{{ url_for('static', filename='rehab.js') }}"></script>
+</head>
+<body>
+    <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
+    <div class="card">
+        <div class="brand">
+            <div class="logo"><span>🦴</span> BME Rehab</div>
+            <h2>Phục hồi chức năng<br>khớp gối thông minh</h2>
+            <p>Theo dõi tầm vận động (ROM) bằng camera AI và cảm biến IMU, đồng hành cùng bác sĩ trong suốt quá trình hồi phục.</p>
+            <div class="feats">
+                <div class="feat"><i>📷</i> Đo góc gập bằng camera MediaPipe</div>
+                <div class="feat"><i>🦵</i> Cảm biến IMU không dây độ chính xác cao</div>
+                <div class="feat"><i>📊</i> Biểu đồ tiến trình &amp; tư vấn từ bác sĩ</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h1>Chào mừng trở lại 👋</h1>
+            <div class="subtitle">Đăng nhập để tiếp tục buổi tập của bạn</div>
+
+            {% if msg %}
+                <div class="alert alert-{{ category }}">{{ msg }}</div>
+            {% endif %}
+
+            <div class="tabs" role="tablist" aria-label="Tài khoản">
+                <button type="button" class="tab active" role="tab" id="login-tab" aria-controls="login-panel" aria-selected="true" onclick="switchTab('login-panel', this)">Đăng nhập</button>
+                <button type="button" class="tab" role="tab" id="register-tab" aria-controls="register-panel" aria-selected="false" tabindex="-1" onclick="switchTab('register-panel', this)">Đăng ký bệnh nhân</button>
+            </div>
+
+            <div id="login-panel" class="form-panel active" role="tabpanel" aria-labelledby="login-tab">
+                <form action="/login" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label for="login-username">Tên đăng nhập</label>
+                    <input id="login-username" type="text" name="username" autocomplete="username" maxlength="64" autocapitalize="none" spellcheck="false" placeholder="Nhập tài khoản" required>
+                    <label for="login-password">Mật khẩu</label>
+                    <input id="login-password" type="password" name="password" autocomplete="current-password" maxlength="256" placeholder="Nhập mật khẩu" required>
+                    <button type="submit">Đăng nhập</button>
+                </form>
+            </div>
+
+            <div id="register-panel" class="form-panel" role="tabpanel" aria-labelledby="register-tab" hidden>
+                <form action="/register" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label for="register-username">Tên tài khoản (3–64 ký tự, không có khoảng trắng)</label>
+                    <input id="register-username" type="text" name="username" autocomplete="username" minlength="3" maxlength="64" pattern="\S+" autocapitalize="none" spellcheck="false" placeholder="Ví dụ: vanan123" required>
+                    <label for="register-password">Mật khẩu (ít nhất 10 ký tự)</label>
+                    <input id="register-password" type="password" name="password" autocomplete="new-password" minlength="10" maxlength="256" placeholder="Tạo mật khẩu" required>
+                    <label for="register-name">Họ và tên bệnh nhân</label>
+                    <input id="register-name" type="text" name="name" autocomplete="name" maxlength="120" placeholder="Ví dụ: Nguyễn Văn An" required>
+                    <label for="register-age">Tuổi</label>
+                    <input id="register-age" type="number" name="age" min="1" max="120" step="1" inputmode="numeric" required>
+                    <label for="register-week">Tuần phục hồi hiện tại</label>
+                    <input id="register-week" type="number" name="week" min="0" max="104" step="1" inputmode="numeric" required>
+                    <button type="submit">Đăng ký tài khoản</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script>
+        function switchTab(pId, el) {
+            document.querySelectorAll('.form-panel').forEach(p => { p.classList.toggle('active', p.id === pId); p.hidden = p.id !== pId; });
+            document.querySelectorAll('.tab').forEach(t => {
+                t.classList.toggle('active', t === el);
+                t.setAttribute('aria-selected', String(t === el));
+                t.tabIndex = t === el ? 0 : -1;
+            });
+        }
+        document.querySelector('.tabs').addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const tabs = [...document.querySelectorAll('.tab')];
+            const index = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (tabs.indexOf(document.activeElement) + 1) % tabs.length;
+            const tab = tabs[index];
+            switchTab(tab.getAttribute('aria-controls'), tab);
+            tab.focus();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BME Rehab · Penalty 3D</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="/static/three.min.js" onerror="var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';document.head.appendChild(s);"></script>
+<style>
+  :root{--primary:#0E82FD;--green:#16A34A;--amber:#F59E0B;--ink:#1B2559;}
+  *{box-sizing:border-box;}
+  body{font-family:'Poppins','Segoe UI',Arial,sans-serif;background:radial-gradient(circle at 50% -10%,#1b2a52,#0b1020);color:#fff;margin:0;padding:16px;}
+  .wrap{max-width:1040px;margin:auto;}
+  .top{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,#16A34A,#0E82FD);padding:13px 20px;border-radius:16px;box-shadow:0 14px 32px rgba(0,0,0,.4);margin-bottom:14px;flex-wrap:wrap;gap:8px;}
+  .top h1{margin:0;font-size:19px;font-weight:800;}
+  .top p{margin:3px 0 0;font-size:12.5px;color:rgba(255,255,255,.92);}
+  .btn{border:none;border-radius:12px;padding:9px 15px;font-weight:700;font-family:inherit;cursor:pointer;font-size:14px;}
+  .btn-back{background:rgba(255,255,255,.2);color:#fff;text-decoration:none;}
+  .stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.5);background:#0a0f1e;}
+  #view{width:100%;height:560px;display:block;}
+  .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9fb0d6;font-weight:700;}
+  .hud{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;font-weight:800;text-shadow:0 2px 6px rgba(0,0,0,.7);}
+  .hud .pill{background:rgba(0,0,0,.45);border-radius:12px;padding:8px 14px;font-size:15px;}
+  .center{position:absolute;top:38%;left:0;right:0;text-align:center;font-weight:800;font-size:52px;color:#FFD54A;text-shadow:0 4px 14px rgba(0,0,0,.7);pointer-events:none;opacity:0;transition:opacity .15s;}
+  .gauge{position:absolute;left:14px;bottom:14px;background:rgba(6,12,24,.66);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:10px 12px;text-align:center;}
+  .gauge .gtitle{font-size:10px;letter-spacing:1.2px;color:#9fb0d6;font-weight:800;}
+  .gauge .gval{font-size:22px;font-weight:800;color:#FFD54A;margin:2px 0 6px;line-height:1;}
+  .gbody{position:relative;display:flex;align-items:flex-end;gap:6px;height:210px;}
+  .gticks{position:relative;width:24px;height:100%;}
+  .gticks span{position:absolute;right:0;transform:translateY(50%);font-size:9.5px;color:#8ea3cc;}
+  .gbar{position:relative;width:20px;height:100%;background:rgba(0,0,0,.55);border:1.5px solid rgba(255,255,255,.45);border-radius:10px;overflow:hidden;}
+  .gzone{position:absolute;left:0;width:100%;background:rgba(22,163,74,.9);border-top:2px solid #7CFFB2;border-bottom:2px solid #7CFFB2;}
+  .gfill{position:absolute;left:0;bottom:0;width:100%;background:linear-gradient(#FFE082,#FFB300);transition:height .06s linear;}
+  .gmark{position:absolute;left:-3px;width:26px;height:2px;background:#fff;box-shadow:0 0 6px #fff;transition:bottom .06s linear;}
+  .ghint{margin-top:6px;font-size:10px;color:#9fb0d6;max-width:100px;line-height:1.3;}
+  .goalbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px;font-size:13.5px;}
+  .goalbox input{width:64px;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:6px 8px;font-family:inherit;font-weight:700;text-align:center;}
+  .gbtn{background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px;}
+  .gbtn.save{background:var(--green);}
+  .ginfo{color:#9fb0d6;font-size:12.5px;}
+  .controls{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  .src{flex:1;background:rgba(255,255,255,.08);color:#fff;border:1.5px solid rgba(255,255,255,.15);border-radius:12px;padding:10px;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px;}
+  .src.active{background:var(--primary);border-color:var(--primary);}
+  .rowbtn{display:flex;gap:8px;margin-top:8px;}
+  .start{flex:2;background:var(--green);color:#fff;padding:13px;font-size:16px;border-radius:12px;}
+  .auto{flex:1;background:rgba(255,255,255,.1);color:#fff;padding:13px;border-radius:12px;}
+  .hint{margin-top:8px;font-size:12.5px;color:#9fb0d6;text-align:center;}
+  .overlay{position:fixed;inset:0;background:rgba(5,10,20,.8);display:none;align-items:center;justify-content:center;z-index:30;}
+  .modal{background:#141c34;border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:26px;max-width:400px;width:92%;text-align:center;}
+  .modal h2{margin:0 0 6px;color:#FFD54A;}
+  .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:15px;}
+</style>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <script src="{{ url_for('static', filename='rehab.js') }}"></script>
+</head>
+<body>
+    <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>⚽ Penalty 3D — Gập đúng lực để sút</h1>
+      <p>Tuần {{ week }} · Gập tới <b>{{ target }}°</b> (±{{ tol }}°) mới sút được · canh vòng ngắm né thủ môn · 5 lượt</p>
+    </div>
+    <a href="/dashboard" class="btn btn-back">⬅ Về phòng tập</a>
+  </div>
+
+  <div class="stage">
+    <canvas id="view"></canvas>
+    <div class="loading" id="loading">Đang tải sân 3D…</div>
+    <div class="hud">
+      <div class="pill">⚽ <span id="goals">0</span> · 🎯 <span id="shots">0/5</span></div>
+      <div class="pill">🔥 <span id="streak">0</span> · 📈 <span id="best">0°</span></div>
+    </div>
+    <div class="center" id="center"></div>
+    <div class="gauge">
+      <div class="gtitle">GÓC GẬP</div>
+      <div class="gval" id="gval">0°</div>
+      <div class="gbody">
+        <div class="gticks" id="gticks"></div>
+        <div class="gbar"><div class="gzone" id="zone"></div><div class="gfill" id="fill"></div><div class="gmark" id="gmark"></div></div>
+      </div>
+      <div class="ghint" id="ghint">gập tới vùng xanh để sút</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="src" id="src-cam" onclick="setSrc('cam',this)">📷 Camera</button>
+    <button class="src" id="src-imu" onclick="setSrc('imu',this)">🦵 Cảm biến</button>
+    <button class="src active" id="src-demo" onclick="setSrc('demo',this)">🕹️ Demo</button>
+  </div>
+  <div class="rowbtn">
+    <button class="btn start" id="startBtn" onclick="startGame()">▶ VÀO SÂN</button>
+    <button class="btn auto" id="autoBtn" onclick="toggleAuto()">🤖 Auto: TẮT</button>
+  </div>
+  <div class="goalbox">
+    <span>🎯 <b>Mục tiêu riêng của bệnh nhân:</b></span>
+    <span>đạt <input id="goalInput" type="number" min="30" max="150" value="{{ goal if goal else default_target }}">° trong
+      <input id="daysInput" type="number" min="1" max="180" value="{{ goal_days }}"> ngày</span>
+    <button class="gbtn save" onclick="saveGoal()">Lưu mục tiêu</button>
+    <button class="gbtn" onclick="clearGoal()">Dùng mặc định theo tuần</button>
+    <span class="ginfo" id="goalInfo">
+      {% if goal %}Đang dùng mục tiêu riêng <b style="color:#7CFFB2;">{{ goal }}°</b>{% if days_left != -999 %} · còn <b>{{ days_left }}</b> ngày{% endif %} · ROM tốt nhất: <b>{{ best_ever }}°</b>
+      {% else %}Đang dùng mặc định theo tuần {{ week }} ({{ target }}°) · ROM tốt nhất: <b>{{ best_ever }}°</b>{% endif %}
+    </span>
+  </div>
+  <div class="hint" id="hint">Demo: giữ <b>phím ↑</b> gập chân lấy lực — vào <b>vùng xanh</b> là tự sút. Bấm <b>Auto</b> để tự đá.</div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="mtitle">Kết thúc!</h2>
+    <p id="verdict" style="color:#9fb0d6;"></p>
+    <div class="kv"><span>Bàn thắng</span><b id="mGoals">0/5</b></div>
+    <div class="kv"><span>ROM cao nhất</span><b id="mBest">0°</b></div>
+    <div class="kv"><span>Số lần gập đạt mục tiêu</span><b id="mReps">0</b></div>
+    <button class="btn start" id="saveBtn" style="width:100%;margin-top:14px;" onclick="saveResult()">💾 Lưu vào hồ sơ</button>
+    <button class="btn auto" style="width:100%;margin-top:8px;" onclick="location.reload()">↻ Chơi lại</button>
+  </div>
+</div>
+
+<script>
+async function gameFetch(url, options = {}) {
+  const data = await Rehab.api(url, options);
+  return {json: async () => data};
+}
+let gameSource = 'demo', signalReady = false, lastSampleAt = 0;
+const TARGET={{ target }}, TOL={{ tol }}, MAXA=160, SHOTS_NEED=5;
+const GOAL_Z=-17, GOAL_HW=6, GOAL_H=4.2, BALL_Z=5.5;
+let src='demo', running=false, auto=false;
+let rawAngle=0, angle=0;
+let goals=0, shots=0, streak=0, best=0, reps=0;
+let phase='aim', armed=true;
+let aimX=0, aimDir=1;
+let kX=0, kTo=0;
+let ballT=0, shotAimX=0, shotGoal=false;
+let resTimer=0;
+let simA=0, keyUp=false, autoP='down', autoT=0, kickAnim=0;
+let scene,camera,renderer,ball,keeper,aimRing,shooter,shooterLeg,goalNet,camShake=0;
+let lastT=performance.now();
+
+// ---------- AUDIO ----------
+let ac=null;
+function beep(f,d,g,t){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),v=ac.createGain();o.type=t||'sine';o.frequency.value=f;o.connect(v);v.connect(ac.destination);v.gain.value=g||.05;o.start();o.frequency.exponentialRampToValueAtTime(f*0.6,ac.currentTime+d);o.stop(ac.currentTime+d);}catch(e){}}
+function crowd(){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const b=ac.createBuffer(1,ac.sampleRate*0.7,ac.sampleRate);const d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);const s=ac.createBufferSource();s.buffer=b;const v=ac.createGain();v.gain.value=0.22;s.connect(v);v.connect(ac.destination);s.start();}catch(e){}}
+
+// ---------- TEXTURES ----------
+function grassTex(){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d');x.fillStyle='#2f9e50';x.fillRect(0,0,256,256);for(let i=0;i<8;i++){x.fillStyle=i%2?'#2b9149':'#33a656';x.fillRect(i*32,0,32,256);}const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(6,10);return t;}
+function netTex(){const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');x.clearRect(0,0,128,128);x.strokeStyle='rgba(255,255,255,.9)';x.lineWidth=1.5;for(let i=0;i<=128;i+=10){x.beginPath();x.moveTo(i,0);x.lineTo(i,128);x.stroke();x.beginPath();x.moveTo(0,i);x.lineTo(128,i);x.stroke();}const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;}
+function crowdTex(){const c=document.createElement('canvas');c.width=256;c.height=64;const x=c.getContext('2d');x.fillStyle='#10182e';x.fillRect(0,0,256,64);const cols=['#c94f4f','#4f79c9','#e0c14f','#ffffff','#7ac97a'];for(let i=0;i<1400;i++){x.fillStyle=cols[i%5];x.globalAlpha=.7;x.fillRect(Math.random()*256,Math.random()*64,2,2);}return new THREE.CanvasTexture(c);}
+
+function limb(len,rTop,rBot,mat){const m=new THREE.Mesh(new THREE.CylinderGeometry(rTop,rBot,len,12),mat);m.position.y=-len/2;m.castShadow=true;return m;}
+function jointSphere(r,mat){return new THREE.Mesh(new THREE.SphereGeometry(r,12,12),mat);}
+function numberTex(n){const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');x.clearRect(0,0,128,128);x.font='bold 92px Poppins,Arial';x.textAlign='center';x.textBaseline='middle';x.lineWidth=9;x.strokeStyle='rgba(0,0,0,.4)';x.strokeText(n,64,68);x.fillStyle='#fff';x.fillText(n,64,68);return new THREE.CanvasTexture(c);}
+function makePlayer(jersey,shorts,skin,hair,number){
+  const g=new THREE.Group();
+  const jM=new THREE.MeshStandardMaterial({color:jersey,roughness:.55});
+  const shM=new THREE.MeshStandardMaterial({color:shorts,roughness:.8});
+  const skM=new THREE.MeshStandardMaterial({color:skin,roughness:.8});
+  const sockM=new THREE.MeshStandardMaterial({color:0xf2f2f2,roughness:.9});
+  const bootM=new THREE.MeshStandardMaterial({color:0x17171c,roughness:.4,metalness:.15});
+  const hairM=new THREE.MeshStandardMaterial({color:hair,roughness:.95});
+  const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.35,0.84,16),jM);torso.position.y=1.52;torso.castShadow=true;g.add(torso);
+  const num=new THREE.Mesh(new THREE.PlaneGeometry(0.4,0.4),new THREE.MeshBasicMaterial({map:numberTex(number||'9'),transparent:true}));num.position.set(0,1.62,0.33);g.add(num);
+  const shoulders=new THREE.Mesh(new THREE.SphereGeometry(0.35,18,14),jM);shoulders.scale.set(1.1,0.55,0.78);shoulders.position.y=1.9;g.add(shoulders);
+  const hips=new THREE.Mesh(new THREE.SphereGeometry(0.33,16,12),shM);hips.scale.set(1.18,0.8,0.95);hips.position.y=1.08;g.add(hips);
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,0.13,10),skM);neck.position.y=2.0;g.add(neck);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.22,24,24),skM);head.position.y=2.24;head.scale.set(1,1.12,1.04);head.castShadow=true;g.add(head);
+  const hairMesh=new THREE.Mesh(new THREE.SphereGeometry(0.235,24,18,0,6.283,0,2.0),hairM);hairMesh.position.y=2.27;hairMesh.scale.set(1.02,1.05,1.08);g.add(hairMesh);
+  function arm(side){const a=new THREE.Group();a.add(limb(0.36,0.085,0.075,jM));a.add(jointSphere(0.088,skM).translateY(-0.36));const fo=new THREE.Group();fo.position.y=-0.36;fo.add(limb(0.36,0.07,0.06,skM));const hand=jointSphere(0.085,skM);hand.position.y=-0.36;fo.add(hand);a.add(fo);a.position.set(side*0.33,1.86,0);a.rotation.z=side*0.15;a.userData={fo};return a;}
+  const armL=arm(-1),armR=arm(1);g.add(armL,armR);
+  function leg(side){const l=new THREE.Group();l.add(limb(0.44,0.135,0.11,skM));const kn=new THREE.Group();kn.position.y=-0.44;const knj=jointSphere(0.115,sockM);kn.add(knj);kn.add(limb(0.42,0.11,0.085,sockM));const boot=new THREE.Mesh(new THREE.BoxGeometry(0.155,0.11,0.36),bootM);boot.position.set(0,-0.44,0.1);boot.castShadow=true;kn.add(boot);l.add(kn);l.position.set(side*0.14,0.96,0);l.userData={kn};return l;}
+  const legStand=leg(-1),legKick=leg(1);g.add(legStand,legKick);
+  g.userData={armL,armR,legStand,legKick,head,torso};
+  return g;
+}
+function init(){
+  const cv=document.getElementById('view');
+  scene=new THREE.Scene();scene.background=new THREE.Color('#0d1830');scene.fog=new THREE.Fog('#12203c',30,70);
+  camera=new THREE.PerspectiveCamera(52,cv.clientWidth/560,0.1,200);
+  renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio));
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  resize();
+  // lights
+  scene.add(new THREE.HemisphereLight('#bcd8ff','#2b7a3f',0.9));
+  const sun=new THREE.DirectionalLight('#fff7e6',1.15);sun.position.set(-10,22,8);sun.castShadow=true;
+  sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-25;sun.shadow.camera.right=25;sun.shadow.camera.top=25;sun.shadow.camera.bottom=-25;scene.add(sun);
+  // pitch
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(80,90),new THREE.MeshStandardMaterial({map:grassTex(),roughness:1}));
+  ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+  // field lines (vong cam + cham)
+  const lineMat=new THREE.MeshBasicMaterial({color:0xffffff});
+  function line(w,d,x,z){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),lineMat);m.rotation.x=-Math.PI/2;m.position.set(x,0.02,z);scene.add(m);}
+  line(26,0.16,0,GOAL_Z+9);           // vach 16m50 ngang
+  line(0.16,9,-13,GOAL_Z+4.5);line(0.16,9,13,GOAL_Z+4.5); // 2 canh
+  const arc=new THREE.Mesh(new THREE.RingGeometry(4,4.16,40,1,Math.PI*0.15,Math.PI*0.7),lineMat);arc.rotation.x=-Math.PI/2;arc.position.set(0,0.02,GOAL_Z+9);scene.add(arc);
+  const spotM=new THREE.Mesh(new THREE.CircleGeometry(0.18,16),lineMat);spotM.rotation.x=-Math.PI/2;spotM.position.set(0,0.02,BALL_Z);scene.add(spotM);
+  // GOAL frame
+  const postMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.5});
+  const R=0.14;
+  function post(x){const m=new THREE.Mesh(new THREE.CylinderGeometry(R,R,GOAL_H,12),postMat);m.position.set(x,GOAL_H/2,GOAL_Z);m.castShadow=true;scene.add(m);}
+  post(-GOAL_HW);post(GOAL_HW);
+  const bar=new THREE.Mesh(new THREE.CylinderGeometry(R,R,GOAL_HW*2+R*2,12),postMat);bar.rotation.z=Math.PI/2;bar.position.set(0,GOAL_H,GOAL_Z);bar.castShadow=true;scene.add(bar);
+  // net (back + top + sides)
+  const nt=netTex();nt.repeat.set(6,3);
+  const netMat=new THREE.MeshStandardMaterial({map:nt,transparent:true,opacity:.9,side:THREE.DoubleSide,depthWrite:false});
+  const back=new THREE.Mesh(new THREE.PlaneGeometry(GOAL_HW*2,GOAL_H),netMat);back.position.set(0,GOAL_H/2,GOAL_Z-2.2);scene.add(back);goalNet=back;
+  const top=new THREE.Mesh(new THREE.PlaneGeometry(GOAL_HW*2,2.2),netMat.clone());top.rotation.x=-Math.PI/2;top.position.set(0,GOAL_H,GOAL_Z-1.1);scene.add(top);
+  const sideL=new THREE.Mesh(new THREE.PlaneGeometry(2.2,GOAL_H),netMat.clone());sideL.rotation.y=Math.PI/2;sideL.position.set(-GOAL_HW,GOAL_H/2,GOAL_Z-1.1);scene.add(sideL);
+  const sideR=sideL.clone();sideR.position.x=GOAL_HW;scene.add(sideR);
+  // stands (khan dai)
+  const ct=crowdTex();ct.wrapS=THREE.RepeatWrapping;ct.repeat.set(6,1);
+  const standMat=new THREE.MeshStandardMaterial({map:ct});
+  const stand=new THREE.Mesh(new THREE.BoxGeometry(70,10,3),standMat);stand.position.set(0,5,GOAL_Z-6);stand.rotation.x=-0.35;scene.add(stand);
+  // ball
+  ball=new THREE.Mesh(new THREE.SphereGeometry(0.36,24,24),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.35,metalness:.05}));
+  ball.position.set(0,0.36,BALL_Z);ball.castShadow=true;scene.add(ball);
+  // aim ring
+  aimRing=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.07,8,24),new THREE.MeshBasicMaterial({color:0xFFD54A}));
+  aimRing.position.set(0,GOAL_H*0.55,GOAL_Z+0.2);scene.add(aimRing);
+  // keeper (nguoi that)
+  keeper=makePlayer(0xffd21e,0x222833,0xf0c39a,0x2a2016,'1');
+  keeper.userData.armL.rotation.z=1.0;keeper.userData.armR.rotation.z=-1.0;  // gang tay dang ra
+  keeper.userData.legStand.rotation.z=0.12;keeper.userData.legKick.rotation.z=-0.12;
+  keeper.position.set(0,0,GOAL_Z+0.6);scene.add(keeper);
+  // shooter (nhin tu sau lung)
+  shooter=makePlayer(0x1e5cff,0xffffff,0xe8b98f,0x241b12,'9');
+  shooter.position.set(-1.9,0,BALL_Z+0.7);shooter.scale.set(0.95,0.95,0.95);scene.add(shooter);
+  camera.position.set(0.4,4.1,BALL_Z+6.6);camera.lookAt(0,1.3,GOAL_Z);
+  document.getElementById('loading').style.display='none';
+}
+function resize(){const cv=document.getElementById('view');const w=cv.clientWidth||880;renderer.setSize(w,560,false);camera.aspect=w/560;camera.updateProjectionMatrix();}
+window.addEventListener('resize',()=>{if(renderer)resize();});
+
+// ---------- INPUT ----------
+function setSrc(s,el){if(running||shots>=SHOTS_NEED)return;signalReady=false;rawAngle=angle=0;src=s;document.querySelectorAll('.src').forEach(b=>b.classList.remove('active'));el.classList.add('active');document.getElementById('hint').style.display=(s==='demo')?'block':'none';}
+function toggleAuto(){if(running||shots>=SHOTS_NEED)return;auto=!auto;document.getElementById('autoBtn').innerText='🤖 Auto: '+(auto?'BẬT':'TẮT');if(auto)setSrc('demo',document.getElementById('src-demo'));}
+document.addEventListener('keydown',e=>{if(e.key==='ArrowUp'){keyUp=true;e.preventDefault();}});
+document.addEventListener('keyup',e=>{if(e.key==='ArrowUp')keyUp=false;});
+async function pollReal(signal) {
+  if ((!running && shots < SHOTS_NEED) || (src !== 'cam' && src !== 'imu')) return;
+  try {
+    const j = await Rehab.api(src === 'cam' ? '/get_angle' : '/get_imu_angle', {signal});
+    if (signal.aborted) return;
+    if (!Number.isFinite(j.angle) || j.tracking === false || j.receiving === false) {
+      throw new Error('Chưa nhận được chuyển động. Kiểm tra camera hoặc cảm biến.');
+    }
+    rawAngle = j.angle;
+    signalReady = true;
+    lastSampleAt = Date.now();
+  } catch (error) {
+    signalReady = false;
+    rawAngle = 0;
+    throw error;
+  }
+}
+Rehab.poll(pollReal, 100);
+window.addEventListener('blur', () => { keyUp = false; });
+document.addEventListener('visibilitychange', () => {
+  keyUp = false;
+  signalReady = false;
+});
+function updateSim(dt){if(auto){autoT+=dt;if(autoP==='down'){simA-=80*dt;if(simA<=10){simA=10;if(autoT>0.4){autoP='up';autoT=0;}}}else{simA+=90*dt;if(simA>=TARGET+1){autoP='down';autoT=0;}}}else{if(keyUp)simA+=85*dt;else simA-=72*dt;simA=Math.max(0,Math.min(MAXA,simA));}rawAngle=simA;}
+
+function kick(){phase='shoot';ballT=0;reps++;shotAimX=aimX;beep(220,0.12,0.08,'triangle');
+  const dives=[-0.62,0,0.62];kTo=dives[Math.floor(Math.random()*3)];
+  shotGoal=Math.abs(shotAimX-kTo)>0.30;}
+
+function showCenter(txt){const c=document.getElementById('center');c.innerText=txt;c.style.opacity=1;setTimeout(()=>c.style.opacity=0,1100);}
+
+function update(dt){
+  if(src==='demo'||auto)updateSim(dt);
+  angle+=(rawAngle-angle)*Math.min(1,dt*13);
+  const gh=210*Math.min(angle,MAXA)/MAXA;
+  document.getElementById('fill').style.height=gh+'px';
+  document.getElementById('gmark').style.bottom=gh+'px';
+  document.getElementById('gval').innerText=Math.round(angle)+'°';
+  kickAnim+=(((phase==='shoot')?1:0)-kickAnim)*Math.min(1,dt*16);
+  if(shooter){shooter.userData.legKick.rotation.x=-kickAnim*1.5;shooter.userData.torso.rotation.x=kickAnim*0.2;shooter.userData.armL.rotation.z=-0.18-kickAnim*0.5;}
+  if(!running){renderer.render(scene,camera);return;}
+  if(src==='demo'||(signalReady&&Date.now()-lastSampleAt<2000))best=Math.max(best,angle);
+  kX+=(kTo-kX)*Math.min(1,dt*10);
+  keeper.position.x=kX*(GOAL_HW-1.2);keeper.rotation.z=-kX*0.6;
+  keeper.userData.armL.rotation.z=1.0+Math.abs(kX)*0.5;keeper.userData.armR.rotation.z=-1.0-Math.abs(kX)*0.5;
+  // aim ring
+  aimRing.position.x=aimX*(GOAL_HW-0.8);aimRing.rotation.z+=dt*4;
+  if(phase==='aim'){
+    aimX+=aimDir*dt*1.1;if(aimX>1){aimX=1;aimDir=-1;}if(aimX<-1){aimX=-1;aimDir=1;}
+    if(angle<TARGET-TOL-12)armed=true;
+    if(armed&&(src==='demo'||(signalReady&&Date.now()-lastSampleAt<2000))&&Math.abs(angle-TARGET)<=TOL){armed=false;kick();}
+    ball.position.set(0,0.36,BALL_Z);
+  }else if(phase==='shoot'){
+    ballT+=dt*1.5;const t=Math.min(1,ballT);
+    ball.position.x=shotAimX*(GOAL_HW-0.8)*t;
+    ball.position.z=BALL_Z+(GOAL_Z-BALL_Z)*t;
+    ball.position.y=0.36+Math.sin(t*Math.PI)*1.6 + (GOAL_H*0.5-0.36)*t*0.6;
+    ball.rotation.x-=dt*12;
+    if(ballT>=1){shots++;phase='result';resTimer=0;camShake=0.5;
+      if(shotGoal){goals++;streak++;showCenter('G O A L !');beep(700,0.15,0.08);setTimeout(()=>beep(950,0.25,0.08),110);crowd();
+        goalNet.position.z=GOAL_Z-1.6;}
+      else{streak=0;showCenter('CẢN PHÁ! 🧤');beep(130,0.3,0.09,'sawtooth');}
+    }
+  }else if(phase==='result'){resTimer+=dt;goalNet.position.z+=(GOAL_Z-2.2-goalNet.position.z)*Math.min(1,dt*4);
+    if(resTimer>1.2){if(shots>=SHOTS_NEED){running=false;gameover();}else{phase='aim';kTo=0;}}}
+  // camera shake
+  if(camShake>0){camShake-=dt;camera.position.x=(Math.random()-.5)*camShake*0.6;}else camera.position.x*=0.9;
+  document.getElementById('goals').innerText=goals;
+  document.getElementById('shots').innerText=shots+'/'+SHOTS_NEED;
+  document.getElementById('streak').innerText=streak;
+  document.getElementById('best').innerText=Math.round(best)+'°';
+  renderer.render(scene,camera);
+}
+function loop(now){const dt=Math.min(0.05,(now-lastT)/1000);lastT=now;if(renderer)update(dt);requestAnimationFrame(loop);}
+
+function startGame(){
+if(running || !renderer)return;
+gameSource=auto?'demo':src;
+signalReady=false;
+rawAngle=angle=0;
+document.querySelectorAll('.src, #autoBtn, #startBtn').forEach(b=>b.disabled=true);
+goals=0;shots=0;streak=0;best=0;reps=0;phase='aim';armed=true;kTo=0;running=true;document.getElementById('startBtn').innerText='⚽ ĐANG THI ĐẤU';}
+function gameover(){document.getElementById('mtitle').innerText=goals>=4?'🏆 XUẤT SẮC!':(goals>=2?'👏 KHÁ TỐT!':'💪 CỐ LÊN!');
+  document.getElementById('verdict').innerText='Bạn đã gập đạt mục tiêu '+reps+' lần trong trận.';
+  document.getElementById('mGoals').innerText=goals+'/'+SHOTS_NEED;document.getElementById('mBest').innerText=Math.round(best)+'°';document.getElementById('mReps').innerText=reps;
+  document.getElementById('overlay').style.display='flex';
+const save=document.getElementById('saveBtn');
+if(gameSource==='demo'){
+  save.disabled=true;
+  save.textContent='Demo — không lưu vào hồ sơ';
+}}
+async function saveResult() {
+  const b = document.getElementById('saveBtn');
+  if (b.disabled || gameSource === 'demo') return;
+  b.disabled = true;
+  b.textContent = 'Đang lưu…';
+  try {
+    const j = await Rehab.api('/game_save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rom: Math.round(best), source: gameSource === 'imu' ? 'imu' : 'camera'})
+    });
+    b.textContent = 'Đã lưu ROM ' + j.rom + '°';
+  } catch (error) {
+    b.disabled = false;
+    b.textContent = 'Thử lưu lại';
+    Rehab.notify(error.message);
+  }
+}
+
+// ---------- MUC TIEU ROM TUY CHINH ----------
+async function saveGoal(){
+  const g=parseInt(document.getElementById('goalInput').value||'0',10);
+  const d=parseInt(document.getElementById('daysInput').value||'14',10);
+  const info=document.getElementById('goalInfo');info.innerText='Đang lưu...';
+  try{const r=await gameFetch('/set_goal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:g,days:d})});
+    const j=await r.json();
+    if(j.success){info.innerText='✅ Đã đặt mục tiêu '+j.goal+'° trong '+j.days+' ngày — đang tải lại...';setTimeout(()=>location.reload(),700);}
+    else info.innerText='Lỗi: '+(j.message||'không lưu được');
+  }catch(e){info.innerText=e.message||'Lỗi kết nối';}
+}
+async function clearGoal(){
+  const info=document.getElementById('goalInfo');info.innerText='Đang bỏ mục tiêu riêng...';
+  try{await gameFetch('/set_goal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:0})});
+    setTimeout(()=>location.reload(),500);}catch(e){info.innerText=e.message||'Lỗi kết nối';}
+}
+
+// dong ho goc + vach chia
+window.addEventListener('load',()=>{
+  const zone=document.getElementById('zone');
+  zone.style.bottom=(210*(TARGET-TOL)/MAXA)+'px';zone.style.height=(210*(2*TOL)/MAXA)+'px';
+  const tk=document.getElementById('gticks');
+  [0,40,80,120,160].forEach(v=>{const s=document.createElement('span');s.innerText=v;s.style.bottom=(210*v/MAXA)+'px';tk.appendChild(s);});
+  document.getElementById('ghint').innerHTML='mục tiêu <b style="color:#7CFFB2;">'+TARGET+'°</b><br>gập vào vùng xanh để sút';
+  if(window.THREE){try{init();requestAnimationFrame(loop);}catch(error){document.getElementById('loading').textContent='Không khởi tạo được đồ họa 3D trên thiết bị này.';Rehab.notify(error.message);}}
+  else{document.getElementById('loading').innerText='Không tải được thư viện 3D — kiểm tra mạng rồi F5.';}
+});
+</script>
+</body>
+</html>

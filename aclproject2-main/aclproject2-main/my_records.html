@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BME Rehab - Hồ sơ tập luyện</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary:#0E82FD; --teal:#14C0C6; --green:#16A34A; --amber:#F59E0B; --ink:#1B2559; --muted:#6B7A99; --line:#E6ECF5; --bg:#F3F7FF; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Poppins','Segoe UI',Arial,sans-serif; background: var(--bg); color: var(--ink); margin: 0; padding: 32px; }
+        .container { max-width: 960px; margin: auto; display: flex; flex-direction: column; gap: 22px; }
+        .header { background: linear-gradient(135deg,#0E82FD,#14C0C6); color:#fff; padding: 28px; border-radius: 20px; display:flex; justify-content:space-between; align-items:center; box-shadow: 0 16px 36px rgba(14,130,253,.2); }
+        .btn-back { background: rgba(255,255,255,.18); color:#fff; padding:11px 20px; border-radius:12px; text-decoration:none; font-weight:600; }
+        .card { background:#fff; padding:26px; border-radius:18px; border:1px solid var(--line); box-shadow:0 12px 30px rgba(14,130,253,.06); }
+        h2, h3 { font-weight:700; }
+        .info-grid { display:flex; gap:32px; flex-wrap:wrap; }
+        .advice { background:#FFFBEB; border:1px solid #FDE9C8; border-left:5px solid var(--amber); padding:16px 18px; border-radius:12px; margin-top:16px; color:#92400E; }
+        table { width:100%; border-collapse:collapse; font-size:14px; }
+        th { background:#F6F9FF; color:var(--primary); padding:12px; text-align:left; font-weight:600; border-bottom:1px solid var(--line); }
+        td { padding:12px; border-bottom:1px solid var(--line); }
+        tr:hover td { background:#FBFCFF; }
+        .table-scroll { max-height:300px; overflow-y:auto; border:1px solid var(--line); border-radius:12px; margin-top:14px; }
+        .pill { background:#EAF3FF; padding:4px 10px; border-radius:20px; color:var(--primary); font-weight:700; font-size:12px; }
+        .empty { text-align:center; color:var(--muted); padding:26px; }
+    </style>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <script src="{{ url_for('static', filename='rehab.js') }}"></script>
+</head>
+<body>
+    <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h2 style="margin:0;">📁 Hồ sơ tập luyện của tôi</h2>
+                <p style="margin:6px 0 0 0; color:rgba(255,255,255,.88);">Xem lại toàn bộ quá trình phục hồi qua từng ngày</p>
+            </div>
+            <a href="/dashboard" class="btn-back">⬅ Về phòng tập</a>
+        </div>
+
+        <!-- Thong tin benh nhan -->
+        <div class="card">
+            <h3 style="margin-top:0; color:var(--primary);">👤 Thông tin</h3>
+            <div class="info-grid">
+                <p>Họ tên: <b>{{ info[0] }}</b></p>
+                <p>Tuổi: <b>{{ info[1] }}</b></p>
+                <p>Tiến trình: <span class="pill">Tuần {{ info[2] }}</span></p>
+            </div>
+            {% if info[3] %}
+            <div class="advice">✍️ <b>Lời khuyên bác sĩ:</b> {{ info[3] }}</div>
+            {% endif %}
+        </div>
+
+        <!-- Tong hop theo ngay -->
+        <div class="card">
+            <h3 style="margin-top:0; color:var(--primary);">📅 Tổng hợp theo ngày</h3>
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ngày tập</th>
+                            <th style="text-align:center;">Số lượt</th>
+                            <th style="text-align:center;">📷 Camera (tốt nhất)</th>
+                            <th style="text-align:center;">🦵 Cảm biến (tốt nhất)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in days %}
+                        <tr>
+                            <td><b>{{ d[0] }}</b></td>
+                            <td style="text-align:center;">{{ d[1] }}</td>
+                            <td style="text-align:center; color:var(--primary); font-weight:700;">{{ (d[2] ~ '°') if d[2] is not none else '—' }}</td>
+                            <td style="text-align:center; color:var(--green); font-weight:700;">{{ (d[3] ~ '°') if d[3] is not none else '—' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty">Bạn chưa có buổi tập nào. Hãy bắt đầu đo ở phòng tập!</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Chi tiet tung luot -->
+        <div class="card">
+            <h3 style="margin-top:0; color:var(--primary);">🕒 Chi tiết các lượt đo</h3>
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:60px; text-align:center;">STT</th>
+                            <th>Thời gian</th>
+                            <th style="text-align:center;">Góc ROM</th>
+                            <th style="text-align:center;">Nguồn</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in allm %}
+                        <tr>
+                            <td style="text-align:center; color:var(--muted); font-weight:bold;">{{ loop.index }}</td>
+                            <td>{{ m[0] }}</td>
+                            <td style="text-align:center; color:var(--green); font-weight:700;">{{ m[1] }}°</td>
+                            <td style="text-align:center; color:var(--muted);">{{ '🦵 Cảm biến' if m[2] == 'imu' else '📷 Camera' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty">Chưa có lượt đo nào.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
