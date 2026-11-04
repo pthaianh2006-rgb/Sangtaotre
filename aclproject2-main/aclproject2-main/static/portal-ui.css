@@ -2442,6 +2442,7 @@ body.patient-portal-page {
 }
 .page-auth[data-portal="doctor"] .auth-wallpaper-doctor {
   opacity: 0.48;
+  filter: contrast(1.12) saturate(1.06);
 }
 .auth-intro-branded .auth-brand-art {
   background: transparent;
