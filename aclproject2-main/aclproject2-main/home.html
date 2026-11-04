@@ -19,7 +19,7 @@
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='portal-ui.css', v='responsive-preview-1') }}"
+      href="{{ url_for('static', filename='portal-ui.css', v='login-brand-preview-2') }}"
     />
     <script src="{{ url_for('static', filename='rehab.js') }}" defer></script>
     <script
@@ -34,7 +34,11 @@
     <a class="skip-link" href="#auth-main">Đến phần đăng nhập</a>
     <header class="auth-header">{{ brand('/', '') }}</header>
     <main class="auth-layout" id="auth-main">
-      <section class="auth-intro" aria-label="Giới thiệu KneeROM">
+      <section class="auth-intro auth-intro-branded" aria-label="Giới thiệu KneeROM">
+        <div class="auth-brand-art">
+          <img class="auth-brand-patient" src="{{ url_for('static', filename='brand/patient-logo.png') }}" alt="Logo KneeROM dành cho bệnh nhân" width="2268" height="2268" fetchpriority="high" />
+          <img class="auth-brand-doctor" src="{{ url_for('static', filename='brand/doctor-logo.png') }}" alt="Logo KneeROM dành cho bác sĩ" width="2269" height="2268" />
+        </div>
         <h2>Theo dõi phục hồi<br />khớp gối.</h2>
         <p>
           Đo cùng camera và cảm biến IMU.<br />Theo dõi tiến trình cùng bác sĩ.

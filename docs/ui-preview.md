@@ -14,7 +14,7 @@ Mở http://127.0.0.1:5003. Tài khoản minh họa: `patient_demo` hoặc `doct
 
 ## Những thay đổi để xem xét
 
-- Trang đăng nhập chỉ có chữ và form, chưa thêm ảnh; cổng bệnh nhân và bác sĩ vẫn riêng biệt.
+- Trang đăng nhập dùng logo gốc do chủ dự án cung cấp: xanh lá cho bệnh nhân, xanh lam cho bác sĩ. Logo lớn bên trái trên PC và thu nhỏ phía trên form trên điện thoại; hai cổng đăng nhập vẫn riêng biệt.
 - Bệnh nhân dùng màu xanh ngọc, bác sĩ dùng xanh lam. Font Geist và biểu tượng Phosphor được phục vụ từ repo, kèm giấy phép trong `static/fonts` và `static/icons`.
 - Giao diện điều chỉnh cho điện thoại, laptop và PC. Trên điện thoại, điều hướng và nút đo được đặt trong tầm thao tác.
 - Camera và IMU đo cùng một lượt: Bắt đầu → Dừng để giữ kết quả → Lưu chung kèm ảnh. Các cài đặt kết nối và hiệu chuẩn nằm trong phần mở rộng.
@@ -28,12 +28,13 @@ Tất cả ảnh dùng dữ liệu minh họa của launcher; camera hiển th�
 | Màn hình | Desktop | Điện thoại |
 | --- | --- | --- |
 | Đăng nhập | [Xem ảnh](ui-preview/login-desktop.png) | [Xem ảnh](ui-preview/login-mobile.png) |
+| Đăng nhập bác sĩ | [Xem ảnh](ui-preview/login-doctor-desktop.png) | [Xem ảnh](ui-preview/login-doctor-mobile.png) |
 | Bệnh nhân | [Xem ảnh](ui-preview/patient-desktop.png) | [Xem ảnh](ui-preview/patient-mobile.png) |
 | Bác sĩ | [Xem ảnh](ui-preview/doctor-desktop.png) | [Xem ảnh](ui-preview/doctor-mobile.png) |
 
 ## Kiểm tra đã thực hiện
 
-115 kiểm thử Python đã đạt; kiểm thử JavaScript lượt đo chung đã đạt. Edge được kiểm tra ở 320, 390, 1024 và 1440 px: đăng nhập riêng, đăng ký, ẩn/hiện mật khẩu, không có ảnh đăng nhập, không tràn ngang, đo chung start/stop/save, tìm bệnh nhân, biểu đồ và các trang phụ; không có lỗi JavaScript hay tài nguyên static bị thiếu.
+115 kiểm thử Python đã đạt; kiểm thử JavaScript lượt đo chung đã đạt. Edge được kiểm tra ở 320, 390, 1024 và 1440 px: đăng nhập riêng, đăng ký, ẩn/hiện mật khẩu, logo đổi đúng theo cổng đăng nhập, không tràn ngang, đo chung start/stop/save, tìm bệnh nhân, biểu đồ và các trang phụ; không có lỗi JavaScript hay tài nguyên static bị thiếu.
 
 Các trạng thái camera/IMU trong bài kiểm thử trình duyệt được giả lập. Vẫn cần kiểm tra một lượt đo với camera và bộ cảm biến thật trước khi triển khai.
 

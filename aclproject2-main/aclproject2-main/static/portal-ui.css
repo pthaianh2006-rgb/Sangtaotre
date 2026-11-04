@@ -339,7 +339,7 @@
   padding: 24px 12px;
 }
 
-/* Authentication: no image is selected for this version. */
+/* Authentication layout. Supplied brand artwork is framed below. */
 .page-auth {
   display: block;
   min-height: 100dvh;
@@ -2324,5 +2324,84 @@ body.patient-portal-page {
     transition: none !important;
     animation: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Supplied KneeROM marks: preserve source artwork and responsive framing. */
+.page-auth {
+  background: #fff;
+}
+.auth-intro-branded {
+  border: 0;
+  padding: 0;
+  text-align: center;
+  max-width: 540px;
+}
+.auth-brand-art {
+  position: relative;
+  overflow: hidden;
+  width: min(100%, 410px);
+  aspect-ratio: 1;
+  margin: 0 auto 18px;
+  background: #fff;
+}
+.auth-brand-art img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: none;
+  height: auto;
+  transform: translate(-50%, -50%);
+}
+.auth-brand-patient {
+  width: 180%;
+}
+.auth-brand-doctor {
+  display: none;
+  width: 132%;
+}
+.page-auth[data-portal="doctor"] .auth-brand-patient {
+  display: none;
+}
+.page-auth[data-portal="doctor"] .auth-brand-doctor {
+  display: block;
+}
+.auth-intro-branded h2 {
+  font-size: clamp(26px, 2.6vw, 36px);
+  line-height: 1.2;
+  margin-bottom: 16px;
+  letter-spacing: -0.035em;
+}
+.auth-intro-branded p {
+  font-size: 16px;
+  line-height: 1.7;
+}
+@media (max-width: 760px) {
+  .auth-header {
+    padding: 20px 24px 0;
+  }
+  .auth-layout {
+    padding-top: 12px;
+  }
+  .auth-intro-branded {
+    display: block;
+  }
+  .auth-brand-art {
+    width: 100px;
+    margin-bottom: 18px;
+  }
+  .auth-intro-branded h2,
+  .auth-intro-branded p {
+    display: none;
+  }
+}
+@media (min-width: 761px) and (max-height: 800px) {
+  .auth-brand-art {
+    width: min(100%, 310px);
+    margin-bottom: 10px;
+  }
+  .auth-layout {
+    padding-top: 12px;
+    padding-bottom: 36px;
   }
 }

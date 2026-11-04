@@ -79,19 +79,29 @@ async function login(page, role) {
   });
   for (const [width, height, label] of [
     [1440, 1000, "desktop"],
+    [1024, 768, "laptop"],
     [390, 844, "mobile"],
     [320, 780, "small"],
   ]) {
     await page.setViewportSize({ width, height });
     await page.goto(root);
     await fits(page, "login " + label);
-    assert.equal(
-      await page.locator("img").count(),
-      0,
-      "login must not contain images",
-    );
+    assert.equal(await page.locator(".auth-brand-patient").isVisible(), true);
+    await page
+      .locator(".auth-brand-patient")
+      .evaluate((image) => image.decode());
     await page.locator("#doctor-login-tab").click();
     assert.equal(await page.locator("#doctor-login-panel").isVisible(), true);
+    assert.equal(await page.locator(".auth-brand-doctor").isVisible(), true);
+    assert.equal(await page.locator(".auth-brand-patient").isVisible(), false);
+    await page
+      .locator(".auth-brand-doctor")
+      .evaluate((image) => image.decode());
+    if (label !== "small")
+      await page.screenshot({
+        path: path.join(out, "login-doctor-" + label + ".png"),
+        fullPage: true,
+      });
     await page.locator("#doctor-login-tab").press("ArrowLeft");
     assert.equal(await page.locator("#patient-login-panel").isVisible(), true);
     await page.locator("#register-tab").click();
@@ -237,13 +247,13 @@ async function login(page, role) {
     path.join(out, "report.json"),
     JSON.stringify(
       {
-        screens: 8,
+        screens: 12,
         viewports: [320, 390, 1024, 1440],
         checks: [
           "separate logins",
           "registration",
           "password visibility",
-          "no login image",
+          "supplied logo switches with login role",
           "no horizontal overflow",
           "combined start-stop-save",
           "doctor search",

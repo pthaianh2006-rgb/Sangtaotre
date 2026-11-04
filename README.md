@@ -66,4 +66,4 @@ Repo gồm backend, giao diện, firmware, launcher, công cụ di chuyển dữ
 
 ## Responsive UI preview
 
-See [desktop/mobile screenshots and preview instructions](docs/ui-preview.md). The login page has no image yet. Review branch `ui/kneerom-responsive` before merging into `main`.
+See [desktop/mobile screenshots and preview instructions](docs/ui-preview.md). The login page uses the supplied patient and doctor logos. Review branch `ui/kneerom-responsive` before merging into `main`.
