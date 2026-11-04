@@ -2405,3 +2405,96 @@ body.patient-portal-page {
     padding-bottom: 36px;
   }
 }
+
+/* Decorative source artwork stays separate from legible interactive content. */
+.page-auth {
+  position: relative;
+  isolation: isolate;
+  background: #fbfdfc;
+}
+.auth-wallpaper {
+  position: fixed;
+  inset: -8px;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.auth-wallpaper img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+  filter: blur(2.5px) saturate(0.7);
+  transition: opacity 420ms ease;
+}
+.auth-wallpaper-patient {
+  opacity: 0.22;
+}
+.auth-wallpaper-doctor {
+  opacity: 0;
+}
+.page-auth[data-portal="doctor"] .auth-wallpaper-patient {
+  opacity: 0;
+}
+.page-auth[data-portal="doctor"] .auth-wallpaper-doctor {
+  opacity: 0.18;
+}
+.auth-intro-branded .auth-brand-art {
+  background: transparent;
+  mix-blend-mode: multiply;
+}
+.page-auth .auth-panel {
+  position: relative;
+  isolation: isolate;
+}
+.page-auth .auth-panel::before {
+  content: "";
+  position: absolute;
+  inset: -30px;
+  z-index: -1;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(234, 234, 234, 0.7);
+  border-radius: 12px;
+  pointer-events: none;
+}
+@media (max-width: 760px) {
+  .auth-wallpaper-patient {
+    opacity: 0.16;
+  }
+  .page-auth[data-portal="doctor"] .auth-wallpaper-doctor {
+    opacity: 0.14;
+  }
+  .page-auth .auth-panel::before {
+    inset: -16px;
+    border-radius: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-wallpaper img {
+    transition: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .auth-wallpaper {
+    display: none;
+  }
+  .page-auth .auth-panel::before {
+    background: #fff;
+  }
+}
+/* Keep the repeated medical icons, soften the poster's duplicate central mark. */
+.auth-wallpaper img {
+  -webkit-mask-image: radial-gradient(
+    ellipse 38% 50% at 50% 50%,
+    transparent 74%,
+    #000 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 38% 50% at 50% 50%,
+    transparent 74%,
+    #000 100%
+  );
+}

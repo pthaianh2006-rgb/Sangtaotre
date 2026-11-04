@@ -86,6 +86,15 @@ async function login(page, role) {
     await page.setViewportSize({ width, height });
     await page.goto(root);
     await fits(page, "login " + label);
+    await page
+      .locator(".auth-wallpaper img")
+      .evaluateAll((images) =>
+        Promise.all(images.map((image) => image.decode())),
+      );
+    assert.equal(
+      await page.locator(".auth-wallpaper").getAttribute("aria-hidden"),
+      "true",
+    );
     assert.equal(await page.locator(".auth-brand-patient").isVisible(), true);
     await page
       .locator(".auth-brand-patient")
@@ -94,6 +103,15 @@ async function login(page, role) {
     assert.equal(await page.locator("#doctor-login-panel").isVisible(), true);
     assert.equal(await page.locator(".auth-brand-doctor").isVisible(), true);
     assert.equal(await page.locator(".auth-brand-patient").isVisible(), false);
+    await page
+      .locator(".auth-wallpaper img")
+      .evaluateAll((images) =>
+        Promise.all(
+          images.flatMap((image) =>
+            image.getAnimations().map((animation) => animation.finished),
+          ),
+        ),
+      );
     await page
       .locator(".auth-brand-doctor")
       .evaluate((image) => image.decode());
@@ -120,6 +138,15 @@ async function login(page, role) {
         fullPage: true,
       });
   }
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.locator("#doctor-login-tab").click();
+  assert.equal(
+    await page
+      .locator(".auth-wallpaper-doctor")
+      .evaluate((image) => getComputedStyle(image).transitionDuration),
+    "0s",
+  );
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await login(page, "patient");
   for (const [width, height, label] of [
     [1440, 1000, "desktop"],

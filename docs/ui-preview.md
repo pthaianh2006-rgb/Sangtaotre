@@ -15,6 +15,7 @@ Mở http://127.0.0.1:5003. Tài khoản minh họa: `patient_demo` hoặc `doct
 ## Những thay đổi để xem xét
 
 - Trang đăng nhập dùng logo gốc do chủ dự án cung cấp: xanh lá cho bệnh nhân, xanh lam cho bác sĩ. Logo lớn bên trái trên PC và thu nhỏ phía trên form trên điện thoại; hai cổng đăng nhập vẫn riêng biệt.
+- Background y tế gốc phủ toàn trang, được làm mờ và giảm độ đậm riêng với nội dung. Biểu tượng nền chuyển màu nhẹ theo tab; vùng giữa được làm dịu để tránh lặp logo. Form và logo phía trước vẫn rõ nét. Hiệu ứng tắt theo tùy chọn giảm chuyển động/giảm trong suốt của thiết bị.
 - Bệnh nhân dùng màu xanh ngọc, bác sĩ dùng xanh lam. Font Geist và biểu tượng Phosphor được phục vụ từ repo, kèm giấy phép trong `static/fonts` và `static/icons`.
 - Giao diện điều chỉnh cho điện thoại, laptop và PC. Trên điện thoại, điều hướng và nút đo được đặt trong tầm thao tác.
 - Camera và IMU đo cùng một lượt: Bắt đầu → Dừng để giữ kết quả → Lưu chung kèm ảnh. Các cài đặt kết nối và hiệu chuẩn nằm trong phần mở rộng.

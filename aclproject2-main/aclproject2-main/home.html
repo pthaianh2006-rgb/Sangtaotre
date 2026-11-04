@@ -19,7 +19,7 @@
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='portal-ui.css', v='login-brand-preview-2') }}"
+      href="{{ url_for('static', filename='portal-ui.css', v='login-wallpaper-preview-3') }}"
     />
     <script src="{{ url_for('static', filename='rehab.js') }}" defer></script>
     <script
@@ -32,6 +32,10 @@
     data-initial-portal="{{ active_portal|default('patient') }}"
   >
     <a class="skip-link" href="#auth-main">Đến phần đăng nhập</a>
+    <div class="auth-wallpaper" aria-hidden="true">
+      <img class="auth-wallpaper-patient" src="{{ url_for('static', filename='brand/patient-background.png') }}" alt="" width="4536" height="4536" decoding="async" />
+      <img class="auth-wallpaper-doctor" src="{{ url_for('static', filename='brand/doctor-background.png') }}" alt="" width="4537" height="4536" decoding="async" />
+    </div>
     <header class="auth-header">{{ brand('/', '') }}</header>
     <main class="auth-layout" id="auth-main">
       <section class="auth-intro auth-intro-branded" aria-label="Giới thiệu KneeROM">
