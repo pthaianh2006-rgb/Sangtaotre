@@ -2427,11 +2427,11 @@ body.patient-portal-page {
   max-width: none;
   object-fit: cover;
   object-position: center;
-  filter: blur(2.5px) saturate(0.7);
+  filter: blur(0.6px) saturate(0.95);
   transition: opacity 420ms ease;
 }
 .auth-wallpaper-patient {
-  opacity: 0.22;
+  opacity: 0.68;
 }
 .auth-wallpaper-doctor {
   opacity: 0;
@@ -2440,7 +2440,7 @@ body.patient-portal-page {
   opacity: 0;
 }
 .page-auth[data-portal="doctor"] .auth-wallpaper-doctor {
-  opacity: 0.18;
+  opacity: 0.48;
 }
 .auth-intro-branded .auth-brand-art {
   background: transparent;
@@ -2462,10 +2462,10 @@ body.patient-portal-page {
 }
 @media (max-width: 760px) {
   .auth-wallpaper-patient {
-    opacity: 0.16;
+    opacity: 0.54;
   }
   .page-auth[data-portal="doctor"] .auth-wallpaper-doctor {
-    opacity: 0.14;
+    opacity: 0.38;
   }
   .page-auth .auth-panel::before {
     inset: -16px;
