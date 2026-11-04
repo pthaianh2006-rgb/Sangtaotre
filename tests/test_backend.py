@@ -11,7 +11,10 @@ from io import BytesIO
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("acl_backend_tests", ROOT / "aclproject2-main/aclproject2-main/app.py")
+APP_DIR = ROOT / "aclproject2-main" / "aclproject2-main"
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+spec = importlib.util.spec_from_file_location("acl_backend_tests", APP_DIR / "app.py")
 backend = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = backend
 with mock.patch("threading.Thread.start", side_effect=AssertionError("thread started during import")):
@@ -32,7 +35,8 @@ class BackendTests(unittest.TestCase):
         backend.init_db()
         conn = backend.connect_db()
         try:
-            conn.executemany("INSERT INTO users(id,username,password,role,name,age,week) VALUES(?,?,?,?,?,?,?)", [(1,"patient1","unused","patient","Patient One",30,2), (2,"patient2","unused","patient","Patient Two",35,3), (3,"doctor","unused","doctor","Doctor",40,0)])
+            conn.executemany("INSERT INTO patients(id,username,password,name,age,week) VALUES(?,?,?,?,?,?)", [(1,"patient1","unused","Patient One",30,2), (2,"patient2","unused","Patient Two",35,3)])
+            conn.execute("INSERT INTO doctors(id,username,password,name) VALUES(?,?,?,?)", (3,"doctor","unused","Doctor"))
             conn.commit()
         finally:
             conn.close()
@@ -59,7 +63,8 @@ class BackendTests(unittest.TestCase):
     def test_health_does_not_touch_database_or_devices(self):
         with mock.patch.object(backend, "init_db", side_effect=AssertionError("DB touched")):
             response = backend.app.test_client().get("/health")
-        self.assertEqual(response.json, {"status": "ok", "app": "KneeROM"})
+        self.assertEqual((response.json["status"], response.json["app"]), ("ok", "KneeROM"))
+        self.assertTrue(response.json.get("build"))
         self.assertIsNone(backend.camera)
         self.assertIsNone(backend.pose)
 
@@ -68,47 +73,61 @@ class BackendTests(unittest.TestCase):
         for path in ("/get_angle", "/get_imu_angle", "/imu_status", "/imu_ports", "/get_measurements"):
             self.assertEqual(anonymous.get(path).status_code, 401, path)
         self.assertEqual(self.client.post("/reset_rom/camera").status_code, 400)
+        self.assertEqual(self.post("/measurement/start").status_code, 200)
         self.assertEqual(self.post("/reset_rom/camera").status_code, 200)
         self.assertEqual(self.client_for(3).get("/get_angle").status_code, 403)
 
     def test_hardware_lease_isolates_patients(self):
         self.measured(90)
         other = self.client_for(2)
-        self.assertEqual(other.get("/get_max_rom").status_code, 409)
+        self.assertTrue(other.get("/get_max_rom").json["busy"])
         self.assertEqual(self.post("/save_rom/camera", client=other).status_code, 409)
         backend._hardware_last_seen -= backend.HARDWARE_LEASE_SECONDS + 1
+        # Polling after expiry stays idle until the next patient explicitly starts.
+        self.assertFalse(other.get("/get_max_rom").json["active"])
+        self.assertEqual(self.post("/measurement/start", client=other).status_code, 200)
         response = other.get("/get_max_rom")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json["max_rom"], 0)
         self.assertEqual(backend._hardware_owner, 2)
 
-    def test_rom_validation_and_real_measurement(self):
+    def test_real_measurement_save_is_preserved(self):
         self.measured(75)
-        for value in ("nan", "inf", -1, 181, True):
-            self.assertEqual(self.post("/game_save", {"rom": value, "source": "camera"}).status_code, 400)
-        self.assertEqual(self.post("/game_save", {"rom": 70, "source": "demo"}).status_code, 400)
-        self.assertEqual(self.post("/game_save", {"rom": 90, "source": "camera"}).status_code, 400)
-        self.assertEqual(self.post("/game_save", []).status_code, 400)
-        self.assertEqual(self.post("/game_save", {"rom": 74, "source": "camera"}).status_code, 200)
         response = self.post("/save_rom/camera")
         self.assertEqual(response.json["saved_rom"], 75)
         self.assertEqual(self.post("/save_rom/camera").status_code, 409)
         conn = backend.connect_db()
         try:
-            self.assertEqual(conn.execute("SELECT patient_id,angle,source FROM measurements ORDER BY id").fetchall(), [(1,74,"camera"), (1,75,"camera")])
+            self.assertEqual(conn.execute("SELECT patient_id,angle,source FROM measurements ORDER BY id").fetchall(), [(1,75,"camera")])
         finally:
             conn.close()
 
-    def test_stale_measurement_and_invalid_goal(self):
+    def test_stale_measurement_is_not_saved(self):
         self.measured()
         backend.camera_last_data -= 5
-        self.assertEqual(self.post("/game_save", {"rom": 70, "source": "camera"}).status_code, 409)
         self.assertEqual(self.post("/save_rom/camera").status_code, 409)
         self.assertEqual(self.post("/reset_rom/bogus").status_code, 400)
-        self.assertEqual(self.post("/set_goal", {"goal": "inf"}).status_code, 400)
-        self.assertEqual(self.post("/set_goal", {"goal": 170}).status_code, 400)
-        self.assertEqual(self.post("/set_goal", []).status_code, 400)
-        self.assertEqual(self.post("/set_goal", {"goal": 90, "days": 14}).status_code, 200)
+
+    def test_removed_game_routes_and_navigation(self):
+        self.measured(75)
+        anonymous = backend.app.test_client()
+        with anonymous.session_transaction() as session:
+            session["csrf_token"] = "test-token"
+        for client in (anonymous, self.client, self.client_for(3)):
+            self.assertEqual(client.get("/game").status_code, 404)
+            for route in ("/game_save", "/set_goal"):
+                response = client.post(route, json={"rom":74,"source":"camera","goal":90}, headers={"X-CSRF-Token":"test-token"})
+                self.assertEqual(response.status_code, 404)
+        for route in ("/dashboard", "/profile", "/my_records", "/care"):
+            html = self.client.get(route).get_data(as_text=True)
+            self.assertNotIn('href="/game"', html)
+        self.assertNotIn("game", backend.app.view_functions)
+        self.assertNotIn("game_save", backend.app.view_functions)
+        conn = backend.connect_db()
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM measurements").fetchone()[0],0)
+        finally:
+            conn.close()
 
     def test_patient_cannot_delete_or_export_others(self):
         conn = backend.connect_db()
@@ -122,7 +141,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.post("/delete_all/2").status_code, 403)
 
     def test_empty_history_pages(self):
-        for path in ("/dashboard", "/profile", "/my_records", "/game"):
+        for path in ("/dashboard", "/profile", "/my_records"):
             self.assertEqual(self.client.get(path).status_code, 200, path)
 
     def test_imu_ignores_bad_lines_and_preserves_signed_flexion(self):
@@ -161,7 +180,7 @@ class BackendTests(unittest.TestCase):
         from openpyxl import load_workbook
         conn = backend.connect_db()
         try:
-            conn.execute("UPDATE users SET name=? WHERE id=1", ("=1+1",))
+            conn.execute("UPDATE patients SET name=? WHERE id=1", ("=1+1",))
             conn.execute("INSERT INTO measurements(patient_id,angle,time,source) VALUES(1,75,?,?)", ("2026-01-01 10:00:00", "camera"))
             conn.commit()
         finally:
@@ -192,9 +211,12 @@ class BackendTests(unittest.TestCase):
         conn = sqlite3.connect(legacy)
         try:
             self.assertEqual(conn.execute("SELECT angle,source FROM measurements").fetchall(), [(85,"camera")])
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0], 1)
-            columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM patients").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM doctors").fetchone()[0], 0)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(patients)")}
             self.assertTrue({"rom_goal", "rom_goal_days", "rom_goal_start"} <= columns)
+            fk_targets = {row[2] for row in conn.execute("PRAGMA foreign_key_list(measurements)")}
+            self.assertEqual(fk_targets, {"patients"})
         finally:
             conn.close()
 
@@ -207,17 +229,78 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(client.post("/register", data=form).status_code, 200)
         conn = backend.connect_db()
         try:
-            role, password_hash = conn.execute("SELECT role,password FROM users WHERE username='new_patient'").fetchone()
-            self.assertEqual(role, "patient")
+            password_hash = conn.execute("SELECT password FROM patients WHERE username='new_patient'").fetchone()[0]
             self.assertNotEqual(password_hash, form["password"])
+            self.assertIsNone(conn.execute("SELECT id FROM doctors WHERE username='new_patient'").fetchone())
         finally:
             conn.close()
-        response = client.post("/login", data={"username": form["username"], "password": form["password"], "csrf_token": token})
+        response = client.post("/login/patient", data={"username": form["username"], "password": form["password"], "csrf_token": token})
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.location.endswith("/dashboard"))
         self.assertEqual(client.get("/dashboard").status_code, 200)
         with client.session_transaction() as session:
             self.assertNotEqual(session["csrf_token"], token)
+
+    def test_doctor_account_management_hashes_passwords(self):
+        doctor = self.client_for(3)
+        with doctor.session_transaction() as session:
+            session["username"] = "admin"
+        form = {"username": "doctor_two", "name": "Doctor Two",
+                "password": "strong-password-123", "csrf_token": "test-token"}
+        response = doctor.post("/admin/doctors/create", data=form)
+        self.assertEqual(response.status_code, 302)
+        conn = backend.connect_db()
+        try:
+            row = conn.execute("SELECT id,password FROM doctors WHERE username=?",
+                               ("doctor_two",)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertNotEqual(row[1], form["password"])
+            doctor_id = row[0]
+        finally:
+            conn.close()
+        response = doctor.post(f"/admin/doctors/{doctor_id}/password", data={
+            "password": "replacement-password-456", "csrf_token": "test-token"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(doctor.post("/admin/doctors/3/delete", data={
+            "csrf_token": "test-token"}).status_code, 302)
+        conn = backend.connect_db()
+        try:
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM doctors WHERE id=3").fetchone())
+        finally:
+            conn.close()
+
+
+    def test_patient_and_doctor_use_separate_login_forms_and_tables(self):
+        from werkzeug.security import generate_password_hash
+
+        conn = backend.connect_db()
+        try:
+            conn.execute("UPDATE patients SET password=? WHERE id=1", (generate_password_hash("patient-password"),))
+            conn.execute("UPDATE doctors SET password=? WHERE id=3", (generate_password_hash("doctor-password"),))
+            conn.commit()
+        finally:
+            conn.close()
+
+        page_client = backend.app.test_client()
+        page = page_client.get("/").get_data(as_text=True)
+        self.assertIn('action="/login/patient"', page)
+        self.assertIn('action="/login/doctor"', page)
+        with page_client.session_transaction() as session:
+            token = session["csrf_token"]
+
+        wrong_portal = page_client.post("/login/doctor", data={
+            "username": "patient1", "password": "patient-password", "csrf_token": token,
+        })
+        self.assertEqual(wrong_portal.status_code, 400)
+
+        doctor_login = page_client.post("/login/doctor", data={
+            "username": "doctor", "password": "doctor-password", "csrf_token": token,
+        })
+        self.assertEqual(doctor_login.status_code, 302)
+        self.assertTrue(doctor_login.location.endswith("/admin"))
+        with page_client.session_transaction() as session:
+            self.assertEqual(session["role"], "doctor")
+
 
 
 if __name__ == "__main__":

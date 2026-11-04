@@ -1,73 +1,120 @@
 'use strict';
 let cameraResult = 0, sensorResult = 0, currentStep = 1, stopTelemetry = null;
+let measurementActive = false;
+let saveInProgress = false;
+let cameraRetryTimer = null, cameraRetryCount = 0;
 const $ = id => document.getElementById(id);
 const post = (url, options = {}) => Rehab.api(url, {method: 'POST', ...options});
 const degrees = value => Number.isFinite(Number(value)) ? Number(value).toFixed(1).replace(/\.0$/, '') + '°' : '—';
 
+function disconnectCameraFeed() {
+    clearTimeout(cameraRetryTimer);
+    cameraRetryTimer = null;
+    $('cameraFeed').removeAttribute('src');
+}
+function connectCameraFeed() {
+    const video = $('cameraFeed');
+    if (!measurementActive || currentStep !== 1 || document.hidden || cameraRetryTimer || video.getAttribute('src')) return;
+    // A new URL creates a fresh streaming request after a failed/closed connection.
+    video.src = '/video_feed?stream=' + Date.now();
+}
+function retryCameraFeed() {
+    if (!measurementActive || currentStep !== 1 || document.hidden) return;
+    disconnectCameraFeed();
+    const delay = Math.min(8000, 1000 * 2 ** Math.min(cameraRetryCount++, 3));
+    $('cameraStatus').textContent = 'Đang kết nối lại hình từ Camo… Giữ Camo Camera trên điện thoại đang mở.';
+    cameraRetryTimer = setTimeout(() => { cameraRetryTimer = null; connectCameraFeed(); }, delay);
+}
+
 function showStep(n) {
     currentStep = n;
-    if (stopTelemetry) stopTelemetry();
-    for (let i = 1; i <= 3; i++) {
-        $('step' + i).style.display = i === n ? 'block' : 'none';
-        $('ind' + i).className = 'step ' + (i < n ? 'done' : i === n ? 'active' : '');
-        $('ind' + i).setAttribute('aria-current', i === n ? 'step' : 'false');
-    }
-    const video = $('cameraFeed');
-    if (n === 1 && !document.hidden) video.src = '/video_feed';
-    else video.removeAttribute('src');
-    $('calibBanner').style.display = 'none';
-    if (n < 3) stopTelemetry = Rehab.poll(async signal => {
-        if (n === 1) {
-            const [angle, max] = await Promise.all([Rehab.api('/get_angle', {signal}), Rehab.api('/get_max_rom', {signal})]);
-            if (signal.aborted) return;
-            $('liveAngle').textContent = angle.tracking === false ? 'Chưa thấy chân' : degrees(angle.angle);
-            $('maxRomSession').textContent = degrees(max.max_rom);
-            $('cameraStatus').textContent = angle.tracking === false ? 'Đưa chân vào khung hình và kiểm tra kết nối camera.' : 'Camera đang theo dõi chuyển động.';
-        } else {
-            const [angle, max, status] = await Promise.all([
-                Rehab.api('/get_imu_angle', {signal}), Rehab.api('/get_imu_max_rom', {signal}), Rehab.api('/imu_status', {signal})
-            ]);
-            if (signal.aborted) return;
-            $('liveImuAngle').textContent = status.receiving ? degrees(angle.angle) : '—';
-            $('maxImuSession').textContent = degrees(max.max_rom);
-            $('imuStatus').textContent = status.receiving ? '● đang nhận dữ liệu' : status.connected ? '● đã kết nối, đang chờ dữ liệu' : '● mất kết nối';
-            $('imuStatus').style.background = status.receiving ? '#166534' : '#7f1d1d';
-            $('calibBanner').style.display = status.calibrating ? 'block' : 'none';
-            const stability = $('stability');
-            stability.textContent = !status.receiving ? 'Chưa nhận được tín hiệu cảm biến' : status.jitter > 5
-                ? 'Cảm biến đang rung (' + degrees(status.jitter) + '). Giữ yên chân trước khi hiệu chỉnh.'
-                : 'Tín hiệu ổn định (' + degrees(status.jitter) + ').';
-            stability.style.color = status.receiving && status.jitter <= 5 ? '#166534' : '#B45309';
+    if (stopTelemetry) { stopTelemetry(); stopTelemetry = null; }
+    $('step1').style.display = n === 3 ? 'none' : 'block';
+    $('step2').style.display = n === 3 ? 'none' : 'block';
+    $('step3').style.display = n === 3 ? 'block' : 'none';
+    $('finishCombined').style.display = n === 3 ? 'none' : 'block';
+    disconnectCameraFeed();
+    if (n !== 3 && measurementActive) stopTelemetry = Rehab.poll(async signal => {
+        const data = await Rehab.api('/measurement/status', {signal});
+        if (signal.aborted) return;
+        if (data.active === false) {
+            endLocalMeasurement();
+            $('measurementStatus').textContent = data.message;
+            return;
         }
+        const camera = data.camera, imu = data.imu, status = data.imu;
+        if (camera.stream_ready) connectCameraFeed();
+        const ready = camera.tracking === true && camera.quality?.ready === true;
+        $('liveAngle').textContent = ready ? degrees(camera.angle) : '—';
+        $('maxRomSession').textContent = degrees(camera.max_rom);
+        $('cameraQuality').textContent = camera.quality?.message || 'Đang chờ khớp chân rõ trong hình.';
+        $('cameraQuality').dataset.ready = String(ready);
+        const device = camera.camera;
+        $('cameraStatus').textContent = camera.message || (device?.width ? `${device.name}: ${device.width} × ${device.height}` : 'Đang khởi động Camo…');
+        $('liveImuAngle').textContent = status.receiving ? degrees(imu.angle) : '—';
+        $('maxImuSession').textContent = degrees(imu.max_rom);
+        $('imuStatus').textContent = status.receiving ? '● đang nhận dữ liệu' : status.connected ? '● đang chờ dữ liệu' : '● mất kết nối';
+        $('imuStatus').style.background = status.receiving ? '#166534' : '#7f1d1d';
+        $('calibBanner').style.display = status.calibrating ? 'block' : 'none';
+        $('stability').textContent = !status.receiving ? 'Kiểm tra nguồn và kết nối cảm biến.' : status.jitter > 5 ? 'Cảm biến đang rung. Kiểm tra dây đeo.' : 'Tín hiệu cảm biến ổn định.';
+        const canSave = !saveInProgress && ready && camera.snapshot_ready && status.receiving && !status.calibrating;
+        $('finishCombined').disabled = !canSave;
+        $('combinedHint').textContent = !ready ? 'Camera chưa đạt: ' + $('cameraQuality').textContent : !status.receiving ? 'Chờ tín hiệu IMU để lưu đủ hai kết quả.' : 'Hai nguồn đang đo song song. Bấm Hoàn tất khi kết thúc bài tập.';
     }, 300, error => {
-        if (n === 1) { $('liveAngle').textContent = '—'; $('cameraStatus').textContent = error.message; }
-        else { $('liveImuAngle').textContent = '—'; $('imuStatus').textContent = '● mất kết nối'; $('imuStatus').style.background = '#7f1d1d'; }
+        $('finishCombined').disabled = true;
+        $('liveAngle').textContent = $('liveImuAngle').textContent = '—';
+        $('combinedHint').textContent = error.message;
         Rehab.notify(error.message);
     });
 }
 
-function finishCamera(button) {
+function endLocalMeasurement() {
+    measurementActive = false;
+    $('finishCombined').disabled = true;
+    if (stopTelemetry) { stopTelemetry(); stopTelemetry = null; }
+    disconnectCameraFeed();
+    cameraRetryCount = 0;
+    $('startMeasurement').disabled = false;
+    $('stopMeasurement').disabled = true;
+}
+async function releaseMeasurement() {
+    endLocalMeasurement();
+    await post('/measurement/stop');
+    $('measurementStatus').textContent = 'Đã dừng đo và trả lại thiết bị.';
+}
+function startMeasurement(button) {
     Rehab.action(button, async () => {
-        const data = await post('/save_rom/camera');
-        cameraResult = data.saved_rom;
-        insertRowToTable(data.saved_rom, data.time, 'camera', data.id);
-        showStep(2);
-        await post('/reset_rom/imu');
+        await post('/measurement/start', {headers:{'Content-Type':'application/json'}, body:JSON.stringify({combined:true})});
+        $('captureResult').hidden = true;
+        $('finishCombined').disabled = true;
+        measurementActive = true;
+        $('stopMeasurement').disabled = false;
+        $('measurementStatus').textContent = 'Lượt đo đang hoạt động trên tài khoản của bạn.';
+        showStep(currentStep === 3 ? 1 : currentStep);
     });
 }
-function finishSensor(button) {
+function stopMeasurement(button) {
+    Rehab.action(button, releaseMeasurement);
+}
+function finishCombined(button) {
     Rehab.action(button, async () => {
-        const data = await post('/save_rom/imu');
-        sensorResult = data.saved_rom;
-        insertRowToTable(data.saved_rom, data.time, 'imu', data.id);
-        const diff = Math.abs(cameraResult - sensorResult);
+        saveInProgress = true;
+        try {
+        const data = await post('/measurement/save_combined');
+        cameraResult = data.camera_rom;
+        sensorResult = data.imu_rom;
+        insertRowToTable(cameraResult, data.time, 'camera', data.camera_id);
+        insertRowToTable(sensorResult, data.time, 'imu', data.imu_id);
         $('resCam').textContent = degrees(cameraResult);
         $('resImu').textContent = degrees(sensorResult);
-        $('resDiff').textContent = degrees(diff);
-        $('resVerdict').textContent = diff <= 5 ? 'Chênh lệch giữa hai lượt đo không quá 5°.'
-            : diff <= 10 ? 'Chênh lệch giữa hai lượt đo từ 5° đến 10°.'
-            : 'Chênh lệch lớn hơn 10°. Kiểm tra vị trí cảm biến và góc camera trước lượt đo tiếp theo.';
+        $('resDiff').textContent = degrees(Math.abs(cameraResult-sensorResult));
+        $('resVerdict').textContent = 'So sánh hai ROM lớn nhất trong cùng lượt tập.';
+        $('captureImage').src = data.snapshot_url;
+        $('captureCaption').textContent = 'Ảnh tại ROM camera lớn nhất: ' + degrees(cameraResult) + ' · ' + data.captured_at;
+        $('captureResult').hidden = false;
         showStep(3);
+        await releaseMeasurement();
+        } finally { saveInProgress = false; }
     });
 }
 function renumberRows() {
@@ -87,7 +134,10 @@ function deleteAll(button) {
     Rehab.action(button, async () => { await post('/delete_all_me'); location.reload(); });
 }
 function restart(button) {
-    Rehab.action(button, async () => { await post('/reset_rom/camera'); cameraResult = sensorResult = 0; showStep(1); });
+    cameraResult = sensorResult = 0;
+    $('captureResult').hidden = true;
+    showStep(1);
+    startMeasurement(button);
 }
 function imuCmd(command, button) {
     Rehab.action(button, async () => { const data = await post('/imu_cmd/' + command); Rehab.notify(data.message || 'Đã gửi lệnh hiệu chỉnh.', 'info'); });
@@ -128,10 +178,11 @@ function reconnectImu(button) {
 function setImuMode(mode, button) {
     Rehab.action(button, async () => {
         await post('/set_imu_mode/' + mode);
-        ['serial', 'wifi'].forEach(value => {
+        ['ble', 'serial', 'wifi'].forEach(value => {
             $('modeBtn-' + value).classList.toggle('legbtn-active', mode === value);
             $('modeBtn-' + value).setAttribute('aria-pressed', String(mode === value));
         });
+        $('bleBox').style.display = mode === 'ble' ? 'flex' : 'none';
         $('usbBox').style.display = mode === 'serial' ? 'flex' : 'none';
         $('wifiBox').style.display = mode === 'wifi' ? 'flex' : 'none';
         if (mode === 'serial') await loadPorts();
@@ -148,13 +199,18 @@ function insertRowToTable(angle, time, source, id) {
     renumberRows();
 }
 document.addEventListener('visibilitychange', () => {
-    const video = $('cameraFeed');
-    if (document.hidden) video.removeAttribute('src');
-    else if (currentStep === 1) video.src = '/video_feed';
+    if (document.hidden) disconnectCameraFeed();
+    // The next status poll reconnects once the camera is ready and this account owns it.
 });
-window.addEventListener('pagehide', () => $('cameraFeed').removeAttribute('src'));
+window.addEventListener('pagehide', () => {
+    disconnectCameraFeed();
+    if (!measurementActive) return;
+    fetch('/measurement/stop', {method:'POST', credentials:'same-origin', keepalive:true,
+        headers:{'X-CSRF-Token':document.querySelector('meta[name="csrf-token"]')?.content || ''}}).catch(()=>{});
+});
 window.addEventListener('DOMContentLoaded', () => {
-    $('cameraFeed').addEventListener('error', () => { $('cameraStatus').textContent = 'Không nhận được hình ảnh. Kiểm tra camera rồi tải lại trang.'; });
+    $('cameraFeed').addEventListener('error', retryCameraFeed);
+    $('cameraFeed').addEventListener('load', () => { cameraRetryCount = 0; });
     showStep(1);
     // Opening a tab must not erase an unfinished measurement; reset only on explicit restart.
 });

@@ -11,7 +11,6 @@ import importlib
 import logging
 from pathlib import Path
 import secrets
-import sqlite3
 import time
 import datetime
 import math
@@ -20,8 +19,20 @@ import json
 import socket
 import threading
 from werkzeug.security import generate_password_hash, check_password_hash
+from database_layer import (
+    connect as database_connect, ensure_schema, insert_measurement,
+    DatabaseError, IntegrityError,
+)
+
+from camera_quality import CameraQuality
+from pose_tasks import TasksPose, PoseLandmark
+from types import SimpleNamespace
+from ai_summary import SummaryJobs, summarize_facts
 
 BASE_DIR = Path(__file__).resolve().parent
+MODEL_DIR = Path(os.getenv("ACL_MODEL_DIR", str(BASE_DIR.parent.parent / "models")))
+POSE_MODEL = Path(os.getenv("ACL_POSE_MODEL", str(MODEL_DIR / "pose_landmarker_full.task")))
+_summary_jobs = SummaryJobs(BASE_DIR / "litert_worker.py", Path(os.getenv("ACL_AI_ROOT", str(BASE_DIR.parent.parent))))
 
 
 def _env_bool(name, default=False):
@@ -39,10 +50,11 @@ app = Flask(__name__, template_folder=str(BASE_DIR))
 app.config.update(
     SECRET_KEY=os.getenv("ACL_SECRET_KEY") or secrets.token_hex(32),
     DATABASE=str(Path(os.getenv("ACL_DATABASE", str(BASE_DIR / "database.db"))).resolve()),
+    DATABASE_URL=os.getenv("ACL_DATABASE_URL"),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=_env_bool("ACL_COOKIE_SECURE"),
-    MAX_CONTENT_LENGTH=64 * 1024,
+    MAX_CONTENT_LENGTH=8 * 1024 * 1024,
     PERMANENT_SESSION_LIFETIME=datetime.timedelta(hours=8),
     HARDWARE_ENABLED=_env_bool("ACL_ENABLE_HARDWARE", True),
     CSRF_ENABLED=True,
@@ -53,18 +65,24 @@ _initialized_databases = set()
 
 
 def connect_db():
-    conn = sqlite3.connect(app.config["DATABASE"], timeout=10)
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA busy_timeout=10000")
+    conn = database_connect(app.config.get("DATABASE_URL"), app.config["DATABASE"])
     if has_request_context():
         g.setdefault("_db_connections", []).append(conn)
     return conn
 
 
+def _database_identity():
+    return app.config.get("DATABASE_URL") or app.config["DATABASE"]
+
+
 @app.teardown_request
 def close_request_connections(error=None):
-    for conn in g.pop("_db_connections", []):
-        conn.close()
+    try:
+        for conn in g.pop("_db_connections", []):
+            conn.close()
+    finally:
+        if g.pop("_hardware_guard", False):
+            _state_lock.release()
 
 
 def csrf_token():
@@ -82,7 +100,7 @@ def security_context():
 def protect_request():
     if request.endpoint in ("static", "health"):
         return None
-    database = app.config["DATABASE"]
+    database = _database_identity()
     if database not in _initialized_databases:
         with _db_init_lock:
             if database not in _initialized_databases:
@@ -99,8 +117,24 @@ def protect_request():
         if session.get("role") != "patient":
             return jsonify(success=False, message="Chỉ tài khoản bệnh nhân được thực hiện thao tác này."), 403
     if request.endpoint in _HARDWARE_ENDPOINTS:
-        if not _claim_hardware(session["user_id"]):
-            return jsonify(success=False, message="Thiết bị đang được một bệnh nhân khác sử dụng."), 409
+        if request.endpoint != "video_feed":
+            # Keep ownership stable through reading/resetting/saving this request.
+            _state_lock.acquire()
+            g._hardware_guard = True
+        with _state_lock:
+            owns_device = _hardware_owner == session["user_id"] and _hardware_active()
+            busy = _hardware_active() and not owns_device
+            # Reading status must not reserve the device or expose another patient's data.
+            if request.method == "GET" and request.endpoint != "video_feed" and not owns_device:
+                return jsonify(active=False, busy=busy, angle=0, max_rom=0, tracking=False,
+                               receiving=False, connected=False, age=None, jitter=0,
+                               calibrating=False, use_imu=USE_IMU, mode=IMU_MODE, ports=[],
+                               message="Bộ camera/IMU đang được sử dụng. Bạn vẫn có thể xem hồ sơ của mình." if busy else "Bấm Bắt đầu đo để kết nối camera/IMU.")
+            if request.endpoint != "measurement_start" and not owns_device:
+                return jsonify(success=False, code="device_busy" if busy else "measurement_inactive",
+                               message="Bộ camera/IMU đang được người khác đo. Vui lòng chờ lượt." if busy else "Bấm Bắt đầu đo trước khi thao tác với thiết bị."), 409
+            if not _claim_hardware(session["user_id"]):
+                return jsonify(success=False, code="device_busy", message="Bộ camera/IMU đang được người khác đo. Hai tài khoản vẫn đăng nhập độc lập; vui lòng chờ thiết bị trống."), 409
         if USE_IMU and request.endpoint in _IMU_ENDPOINTS:
             _start_imu()
 
@@ -119,17 +153,23 @@ def security_headers(response):
 #   0  = webcam laptop
 #   1, 2 = webcam ao (vd iPhone qua Iriun/DroidCam)
 #   "http://192.168.x.x:8081/video" = stream IP tu app camera tren iPhone
-_camera_source = os.getenv("ACL_CAMERA_SOURCE", "1")
+_camera_source = os.getenv("ACL_CAMERA_SOURCE", "Camo")
 CAMERA_SOURCE = int(_camera_source) if _camera_source.isdecimal() else _camera_source
+CAMERA_WIDTH = _env_int("ACL_CAMERA_WIDTH", 1920, 320, 3840)
+CAMERA_HEIGHT = _env_int("ACL_CAMERA_HEIGHT", 1080, 240, 2160)
+CAMERA_FPS = _env_int("ACL_CAMERA_FPS", 30, 5, 60)
+_camera_details = {}
 USE_IMU = _env_bool("ACL_USE_IMU", True)
-IMU_MODE = os.getenv("ACL_IMU_MODE", "wifi").lower()
-if IMU_MODE not in ("wifi", "serial"):
-    raise ValueError("ACL_IMU_MODE must be wifi or serial")
+IMU_MODE = os.getenv("ACL_IMU_MODE", "ble").lower()
+if IMU_MODE not in ("ble", "wifi", "serial"):
+    raise ValueError("ACL_IMU_MODE must be ble, wifi or serial")
 IMU_HOST = os.getenv("ACL_IMU_HOST", "192.168.4.1")
 IMU_TCP_PORT = _env_int("ACL_IMU_TCP_PORT", 8080, 1, 65535)
 IMU_PORT = os.getenv("ACL_IMU_PORT", "COM6")
 IMU_BAUD = _env_int("ACL_IMU_BAUD", 115200, 1200, 4000000)
 EXPORT_DIR = os.getenv("ACL_EXPORT_DIR", str(BASE_DIR / "exports"))
+CARE_UPLOAD_DIR = Path(os.getenv("ACL_CARE_UPLOAD_DIR", str(BASE_DIR / "care_uploads"))).resolve()
+CARE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 
 def _save_and_send(wb, filename):
     """Serialize once and optionally keep an atomic local export copy."""
@@ -158,61 +198,49 @@ def _save_and_send(wb, filename):
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 def init_db():
-    Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     conn = connect_db()
-    cursor = conn.cursor()
-    
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT NOT NULL, -- 'doctor' hoặc 'patient'
-        name TEXT NOT NULL,
-        age INTEGER,
-        week INTEGER,
-        doctor_advice TEXT
-    )
-    """)
-   
-   
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS measurements (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        patient_id INTEGER,
-        angle REAL,
-        time TEXT,
-        source TEXT DEFAULT 'camera',
-        FOREIGN KEY(patient_id) REFERENCES users(id)
-    )
-    """)
-    measurement_columns = {row[1] for row in cursor.execute("PRAGMA table_info(measurements)")}
-    if "source" not in measurement_columns:
-        cursor.execute("ALTER TABLE measurements ADD COLUMN source TEXT DEFAULT 'camera'")
+    try:
+        ensure_schema(conn)
+        admin_password = os.getenv("ACL_ADMIN_PASSWORD")
+        admin_username = os.getenv("ACL_ADMIN_USERNAME", "admin").strip()
+        if admin_password and not conn.execute(
+            "SELECT 1 FROM doctors WHERE username=?", (admin_username,)
+        ).fetchone():
+            if len(admin_password) < 10:
+                raise ValueError("ACL_ADMIN_PASSWORD must contain at least 10 characters")
+            conn.execute(
+                "INSERT INTO doctors(username, password, name) VALUES (?, ?, ?)",
+                (admin_username, generate_password_hash(admin_password), "Bác sĩ Quản trị"),
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
-    # Migration: muc tieu ROM tuy chinh cho tung benh nhan (vd 90 do trong 14 ngay)
-    user_columns = {row[1] for row in cursor.execute("PRAGMA table_info(users)")}
-    for col, ddl in (("rom_goal", "INTEGER"), ("rom_goal_days", "INTEGER"), ("rom_goal_start", "TEXT")):
-        if col not in user_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
-    
-    
-    admin_password = os.getenv("ACL_ADMIN_PASSWORD")
-    admin_username = os.getenv("ACL_ADMIN_USERNAME", "admin").strip()
-    if admin_password and not cursor.execute("SELECT 1 FROM users WHERE username=?", (admin_username,)).fetchone():
-        if len(admin_password) < 10:
-            conn.close()
-            raise ValueError("ACL_ADMIN_PASSWORD must contain at least 10 characters")
-        hashed_pw = generate_password_hash(admin_password)
-        cursor.execute("""
-            INSERT INTO users (username, password, role, name, age, week, doctor_advice) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (admin_username, hashed_pw, "doctor", "Bác sĩ Quản trị", 40, 0, ""))
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_measurements_patient_id_id ON measurements(patient_id, id DESC)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_measurements_patient_source_time ON measurements(patient_id, source, time)")
-    conn.commit()
-    conn.close()
+
+def _care_updates_for(conn, patient_id):
+    return conn.execute(
+        """
+        SELECT care_updates.id, care_updates.image_name, care_updates.note,
+               care_updates.pain_level, care_updates.limb_side,
+               care_updates.created_at, care_updates.doctor_reply,
+               care_updates.doctor_reply_at, doctors.name
+        FROM care_updates
+        LEFT JOIN doctors ON doctors.id = care_updates.doctor_id
+        WHERE care_updates.patient_id=?
+        ORDER BY care_updates.id DESC
+        """,
+        (patient_id,),
+    ).fetchall()
+
+
+def _care_image_extension(data):
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return None
 
 camera = None
 pose = None
@@ -292,22 +320,29 @@ _imu_thread = None
 _latest_frame = None
 _frame_number = 0
 _camera_error = None
+_stream_slots = threading.BoundedSemaphore(2)
+_camera_quality = CameraQuality()
+_camera_peak = None
 camera_last_data = 0.0
 _hardware_owner = None
 _hardware_last_seen = 0.0
+_hardware_generation = 0
 HARDWARE_LEASE_SECONDS = 15.0
 _HARDWARE_ENDPOINTS = {
-    "video_feed", "get_angle", "get_max_rom", "set_leg", "toggle_crowd",
+    "combined_status", "save_combined", "measurement_start", "video_feed", "get_angle", "get_max_rom", "set_leg", "toggle_crowd",
     "get_imu_angle", "get_imu_max_rom", "imu_status", "imu_reconnect",
-    "set_imu_mode", "imu_ports", "imu_connect", "imu_cmd", "reset_rom", "save_rom", "game_save",
+    "set_imu_mode", "imu_ports", "imu_connect", "imu_cmd", "reset_rom", "save_rom",
 }
-_IMU_ENDPOINTS = {"get_imu_angle", "get_imu_max_rom", "imu_status", "imu_reconnect", "set_imu_mode", "imu_connect", "imu_cmd"}
-_PATIENT_ENDPOINTS = {"set_goal", "game_save", "save_rom", "get_measurements", "delete_all_me"}
+_IMU_ENDPOINTS = {"combined_status", "get_imu_angle", "get_imu_max_rom", "imu_status", "imu_reconnect", "set_imu_mode", "imu_connect", "imu_cmd"}
+_PATIENT_ENDPOINTS = {
+    "save_rom", "get_measurements", "delete_all_me",
+    "care_upload", "measurement_stop",
+}
 
 
 def _reset_tracking():
     global current_angle, max_rom_session, imu_angle, imu_max_rom, camera_last_data, imu_last_data
-    global cam_filter_L, cam_filter_R, _latest_frame, imu_jitter
+    global cam_filter_L, cam_filter_R, _latest_frame, imu_jitter, _camera_peak
     current_angle = max_rom_session = imu_angle = imu_max_rom = 0
     camera_last_data = imu_last_data = 0.0
     imu_jitter = 0.0
@@ -317,17 +352,22 @@ def _reset_tracking():
     cam_filter_L = OneEuroFilter(mincutoff=0.15, beta=0.02)
     cam_filter_R = OneEuroFilter(mincutoff=0.15, beta=0.02)
     _latest_frame = None
+    _camera_peak = None
+    _camera_quality.reset()
+    if pose is not None and hasattr(pose, "reset"):
+        pose.reset()
 
 
 def _claim_hardware(patient_id):
-    global _hardware_owner, _hardware_last_seen
+    global _hardware_owner, _hardware_last_seen, _hardware_generation
     now = time.monotonic()
     with _state_lock:
-        if _hardware_owner != patient_id:
+        if _hardware_owner != patient_id or not _hardware_active():
             if _hardware_owner is not None and now - _hardware_last_seen < HARDWARE_LEASE_SECONDS:
                 return False
             _reset_tracking()
             _hardware_owner = patient_id
+            _hardware_generation += 1
         _hardware_last_seen = now
     return True
 
@@ -369,6 +409,17 @@ def _process_imu_line(line):
     global imu_angle, imu_max_rom, imu_jitter, imu_calibrating, imu_last_data
     if not line:
         return
+    if line.startswith("[LINK]"):
+        logger.info("IMU radio: %s", line[:190])
+        return
+    if line.startswith(("[ERROR]", "[WAIT]", "[F]", "[RESET]", "[CALIB]")) or line == "... send C":
+        with _state_lock:
+            imu_calibrating = True
+            imu_last_data = 0.0
+            _imu_buf.clear()
+            imu_jitter = 0
+        logger.info("IMU calibration: %s", line[:190])
+        return
     if line.startswith("[INFO]") or line.startswith("[WARN]"):
         low = line.lower()
         if "giu yen" in low or "rung" in low:
@@ -397,8 +448,8 @@ def _process_imu_line(line):
                 imu_jitter = max(_imu_buf) - min(_imu_buf)
 
 def imu_reader():
-    """Bounded reads and deterministic cleanup for serial and TCP reconnects."""
-    global imu_serial, imu_connected, imu_calibrating, _want_reconnect
+    """Bounded reads and deterministic cleanup for BLE, serial and TCP."""
+    global imu_serial, imu_connected, imu_calibrating, imu_last_data, _want_reconnect
     while not _stop_event.is_set():
         if not _hardware_active():
             _stop_event.wait(0.5)
@@ -407,7 +458,10 @@ def imu_reader():
         try:
             mode, opened = IMU_MODE, current_port
             _want_reconnect = False
-            if mode == "wifi":
+            if mode == "ble":
+                from ble_transport import BleStream
+                connection = BleStream(timeout=0.2)
+            elif mode == "wifi":
                 connection = socket.create_connection((IMU_HOST, IMU_TCP_PORT), timeout=3)
                 connection.settimeout(1)
             else:
@@ -415,7 +469,7 @@ def imu_reader():
                 connection = serial_module.Serial(opened, IMU_BAUD, timeout=1, write_timeout=1)
             with _imu_write_lock:
                 imu_serial = connection
-                imu_connected = True
+                imu_connected = mode != "ble" or connection.connected
                 imu_calibrating = True
             pending = b""
             discarding = False
@@ -424,6 +478,8 @@ def imu_reader():
                     break
                 try:
                     raw = connection.recv(4096) if mode == "wifi" else connection.read(256)
+                    if mode == "ble":
+                        imu_connected = connection.connected
                 except socket.timeout:
                     continue
                 if not raw and mode == "wifi":
@@ -442,6 +498,7 @@ def imu_reader():
         finally:
             with _imu_write_lock:
                 imu_connected = False
+                imu_last_data = 0.0
                 imu_serial = None
                 if connection is not None:
                     try:
@@ -505,55 +562,79 @@ def register():
         conn = connect_db()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO users (username, password, role, name, age, week, doctor_advice)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (username, hashed_password, "patient", name, age, week, ""))
+            INSERT INTO patients (username, password, name, age, week, doctor_advice)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (username, hashed_password, name, age, week, ""))
         conn.commit()
         msg, category = "Đăng ký thành công! Vui lòng đăng nhập.", "success"
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         msg, category = "Tên đăng nhập đã tồn tại!", "danger"
     except (ValueError, KeyError):
-        return render_template("home.html", msg="Thông tin không hợp lệ. Kiểm tra tên đăng nhập, mật khẩu (ít nhất 10 ký tự), tuổi và tuần phục hồi.", category="danger"), 400
-    except sqlite3.Error:
+        return render_template("home.html", msg="Thông tin không hợp lệ. Kiểm tra tên đăng nhập, mật khẩu (ít nhất 10 ký tự), tuổi và tuần phục hồi.", category="danger", active_portal="register"), 400
+    except DatabaseError:
         logger.exception("Registration failed")
-        return render_template("home.html", msg="Chưa thể tạo tài khoản. Vui lòng thử lại.", category="danger"), 503
+        return render_template("home.html", msg="Chưa thể tạo tài khoản. Vui lòng thử lại.", category="danger", active_portal="register"), 503
     finally:
         if 'conn' in locals(): conn.close()
         
-    return render_template("home.html", msg=msg, category=category)
+    return render_template("home.html", msg=msg, category=category, active_portal="patient" if category == "success" else "register")
 
-@app.route("/login", methods=["POST"])
-def login():
+def _login_account(account_type):
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
+    if account_type not in ("patient", "doctor"):
+        return render_template("home.html", msg="Cổng đăng nhập không hợp lệ.", category="danger"), 400
     if not username or len(username) > 64 or not password or len(password) > 256:
-        return render_template("home.html", msg="Sai tài khoản hoặc mật khẩu!", category="danger"), 400
-    
+        return render_template(
+            "home.html", msg="Sai tài khoản hoặc mật khẩu!", category="danger",
+            active_portal=account_type,
+        ), 400
+
+    table = "patients" if account_type == "patient" else "doctors"
     conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user and check_password_hash(user[2], password):
-        session.clear()
-        session.permanent = True
-        session["user_id"] = user[0]
-        session["username"] = user[1]
-        session["role"] = user[3]
-        session["name"] = user[4]
-        
-        if user[3] == "doctor":
-            return redirect(url_for("admin"))
-        return redirect(url_for("dashboard"))
-    else:
-        return render_template("home.html", msg="Sai tài khoản hoặc mật khẩu!", category="danger")
+    try:
+        user = conn.execute(
+            f"SELECT id, username, password, name FROM {table} WHERE username = ?",
+            (username,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not user or not check_password_hash(user[2], password):
+        return render_template(
+            "home.html", msg="Sai tài khoản hoặc mật khẩu!", category="danger",
+            active_portal=account_type,
+        ), 400
+
+    session.clear()
+    session.permanent = True
+    session["user_id"] = user[0]
+    session["username"] = user[1]
+    session["role"] = account_type
+    session["name"] = user[3]
+    return redirect(url_for("admin" if account_type == "doctor" else "dashboard"))
+
+
+@app.route("/login/patient", methods=["POST"])
+def login_patient():
+    return _login_account("patient")
+
+
+@app.route("/login/doctor", methods=["POST"])
+def login_doctor():
+    return _login_account("doctor")
+
+
+@app.route("/login", methods=["POST"])
+def login_legacy():
+    """Compatibility endpoint for old bookmarks and desktop builds."""
+    return _login_account(request.form.get("account_type", "patient"))
 
 @app.route("/logout", methods=["GET", "POST"])
 def logout():
     global _hardware_owner, _hardware_last_seen
     with _state_lock:
-        if _hardware_owner == session.get("user_id"):
+        if session.get("role") == "patient" and _hardware_owner == session.get("user_id"):
             _hardware_owner = None
             _hardware_last_seen = 0.0
             _reset_tracking()
@@ -570,7 +651,7 @@ def dashboard():
     conn = connect_db()
     cursor = conn.cursor()
    
-    cursor.execute("SELECT age, week, doctor_advice FROM users WHERE id = ?", (session["user_id"],))
+    cursor.execute("SELECT age, week, doctor_advice FROM patients WHERE id = ?", (session["user_id"],))
     user_info = cursor.fetchone()
     
     
@@ -608,7 +689,7 @@ def profile():
     pid = session["user_id"]
     conn = connect_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, age, week, username FROM users WHERE id=?", (pid,))
+    cursor.execute("SELECT id, name, age, week, username FROM patients WHERE id=?", (pid,))
     user = cursor.fetchone()
     
     if not user:
@@ -641,7 +722,7 @@ def my_records():
     pid = session["user_id"]
     conn = connect_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT name, age, week, doctor_advice FROM users WHERE id=?", (pid,))
+    cursor.execute("SELECT name, age, week, doctor_advice FROM patients WHERE id=?", (pid,))
     info = cursor.fetchone()
     # Tong hop theo NGAY: so luot, ROM camera tot nhat, ROM cam bien tot nhat
     cursor.execute("""
@@ -658,128 +739,214 @@ def my_records():
     return render_template("my_records.html", info=info, days=days, allm=allm)
 
 
+@app.route("/care")
+def care_timeline():
+    if "user_id" not in session or session.get("role") != "patient":
+        return redirect(url_for("home"))
+    patient_id = session["user_id"]
+    conn = connect_db()
+    patient = conn.execute(
+        "SELECT id, name, age, week, doctor_advice FROM patients WHERE id=?",
+        (patient_id,),
+    ).fetchone()
+    if patient is None:
+        conn.close()
+        session.clear()
+        return redirect(url_for("home"))
+    updates = _care_updates_for(conn, patient_id)
+    measurement = conn.execute(
+        "SELECT COUNT(*), MAX(angle) FROM measurements WHERE patient_id=?",
+        (patient_id,),
+    ).fetchone()
+    conn.close()
+    return render_template(
+        "care_timeline.html",
+        patient=patient,
+        updates=updates,
+        measurement_count=measurement[0] or 0,
+        best_rom=measurement[1],
+        care_message=request.args.get("care_message", ""),
+        care_error=request.args.get("care_error", ""),
+    )
+
+
+@app.route("/care/upload", methods=["POST"])
+def care_upload():
+    patient_id = session["user_id"]
+    note = request.form.get("note", "").strip()
+    side = request.form.get("limb_side", "right").strip().lower()
+    pain_raw = request.form.get("pain_level", "").strip()
+    upload = request.files.get("image")
+
+    if len(note) > 1000 or side not in {"left", "right", "both"}:
+        return redirect(url_for("care_timeline", care_error="Thông tin cập nhật không hợp lệ."))
+    try:
+        pain_level = int(pain_raw)
+    except (TypeError, ValueError):
+        pain_level = None
+    if pain_level is None or not 0 <= pain_level <= 10:
+        return redirect(url_for("care_timeline", care_error="Mức đau phải từ 0 đến 10."))
+    if upload is None or not upload.filename:
+        return redirect(url_for("care_timeline", care_error="Vui lòng chọn ảnh chân cần theo dõi."))
+
+    data = upload.read(CARE_IMAGE_MAX_BYTES + 1)
+    if not data or len(data) > CARE_IMAGE_MAX_BYTES:
+        return redirect(url_for("care_timeline", care_error="Ảnh phải nhỏ hơn 5 MB."))
+    extension = _care_image_extension(data)
+    if extension is None:
+        return redirect(url_for("care_timeline", care_error="Chỉ nhận ảnh JPG, PNG hoặc WebP."))
+
+    CARE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    image_name = f"{secrets.token_hex(24)}{extension}"
+    destination = CARE_UPLOAD_DIR / image_name
+    temporary = CARE_UPLOAD_DIR / f".{image_name}.tmp"
+    try:
+        temporary.write_bytes(data)
+        temporary.replace(destination)
+        conn = connect_db()
+        try:
+            conn.execute(
+                """
+                INSERT INTO care_updates(
+                    patient_id, image_name, note, pain_level, limb_side, created_at
+                ) VALUES(?,?,?,?,?,?)
+                """,
+                (
+                    patient_id, image_name, note, pain_level, side,
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except (OSError, *DatabaseError):
+        destination.unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)
+        logger.exception("Could not save care update")
+        return redirect(url_for("care_timeline", care_error="Không thể lưu ảnh lúc này."))
+
+    return redirect(url_for("care_timeline", care_message="Đã gửi cập nhật cho bác sĩ."))
+
+
+@app.route("/care/image/<int:update_id>")
+def care_image(update_id):
+    if "user_id" not in session:
+        return redirect(url_for("home"))
+    conn = connect_db()
+    row = conn.execute(
+        "SELECT patient_id, image_name FROM care_updates WHERE id=?",
+        (update_id,),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return "Không tìm thấy ảnh.", 404
+    if session.get("role") != "doctor" and not (
+        session.get("role") == "patient" and session.get("user_id") == row[0]
+    ):
+        return "Quyền truy cập bị từ chối.", 403
+    image_path = CARE_UPLOAD_DIR / row[1]
+    if not image_path.is_file():
+        return "Tệp ảnh không còn tồn tại.", 404
+    return send_file(image_path, conditional=True, max_age=0)
+
+
 
 def _process_camera_frame(frame):
-    global current_angle, max_rom_session, camera_last_data
+    global current_angle, max_rom_session, camera_last_data, _camera_peak
+    global cam_filter_L, cam_filter_R
     h, w, _ = frame.shape
-
-    # CHE DO DONG NGUOI: chi cat VUNG GIUA dua vao MediaPipe -> nguoi xung quanh "vo hinh"
-    if crowd_mode:
-        rx0, rx1 = int(ROI_L * w), int(ROI_R * w)
-        ry0, ry1 = int(ROI_T * h), int(ROI_B * h)
-    else:
-        rx0, ry0, rx1, ry1 = 0, 0, w, h
-    rw, rh = max(1, rx1 - rx0), max(1, ry1 - ry0)
-    roi = frame[ry0:ry1, rx0:rx1]
-
-    # XU LY anh (chua lat) -> MediaPipe phan biet trai/phai giai phau chinh xac
-    small = cv2.resize(roi, (POSE_W, max(1, int(rh * POSE_W / rw))))
+    rx0, rx1 = (int(ROI_L*w), int(ROI_R*w)) if crowd_mode else (0, w)
+    ry0, ry1 = (int(ROI_T*h), int(ROI_B*h)) if crowd_mode else (0, h)
+    rw, rh = max(1, rx1-rx0), max(1, ry1-ry0)
+    small = cv2.resize(frame[ry0:ry1, rx0:rx1], (POSE_W, max(1, int(rh*POSE_W/rw))))
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    brightness = float(gray.mean())
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-    rgb.flags.writeable = False           # bo qua copy -> nhanh hon
+    rgb.flags.writeable = False
     result = pose.process(rgb)
-    # Lat anh de HIEN THI nhu guong (cho tu nhien khi tap)
     frame = cv2.flip(frame, 1)
-    if crowd_mode:                        # ve khung VUNG DO (toa do da lat: x -> w-x)
-        cv2.rectangle(frame, (w - rx1, ry0), (w - rx0, ry1), (255, 180, 0), 2)
-        cv2.putText(frame, "VUNG DO - dung trong khung", (w - rx1 + 6, ry0 + 26),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 180, 0), 2)
-
+    now = time.monotonic()
+    points = None
+    side = _camera_quality.side
     if result.pose_landmarks:
         lm = result.pose_landmarks.landmark
         P = mp_pose.PoseLandmark
-        tnow = time.monotonic()
-        # === QUAY NGHIENG: KHONG dung nhan Trai/Phai cua MediaPipe (rat hay nham vi
-        # 2 chan chong nhau). Luon do CHAN RO NHAT trong khung = chan gan camera =
-        # chan dang quay. Nut Trai/Phai chi de DAT TEN chan luc ghi ho so. ===
-        cand = []
-        for pset in ((P.LEFT_HIP, P.LEFT_KNEE, P.LEFT_ANKLE),
-                     (P.RIGHT_HIP, P.RIGHT_KNEE, P.RIGHT_ANKLE)):
-            Hh, Kk, Aa = lm[pset[0].value], lm[pset[1].value], lm[pset[2].value]
-            # GATING theo GOI + CO CHAN (phan di chuyen, o duoi ghe nen luon ro);
-            # KHONG xet hong vi ngoi tua ghe hay bi lung ghe che.
-            vis = min(Kk.visibility, Aa.visibility)
-            cand.append((vis, Hh, Kk, Aa))
-        vis, Hh, Kk, Aa = max(cand, key=lambda c: c[0])   # chan ro nhat (visibility cao nhat)
+        candidates = {
+            'left': tuple(lm[p.value] for p in (P.LEFT_HIP, P.LEFT_KNEE, P.LEFT_ANKLE)),
+            'right': tuple(lm[p.value] for p in (P.RIGHT_HIP, P.RIGHT_KNEE, P.RIGHT_ANKLE)),
+        }
+        side = cam_leg if cam_leg != 'auto' else side or max(candidates, key=lambda key: min(p.visibility for p in candidates[key]))
+        points = candidates[side]
+    was_ready = _camera_quality.status['ready']
+    status = _camera_quality.check(points, now, small.shape[1], small.shape[0], brightness, sharpness)
+    if status['code'] in ('settling', 'ready'):
+        _camera_quality.side = side
+    if status['ready']:
+        _camera_quality.side = side
+        if not was_ready:
+            # Never mix a stale estimate from before occlusion with the new samples.
+            _leg_flexbuf['active'].clear()
+            cam_filter_L = OneEuroFilter(mincutoff=0.15, beta=0.02)
+            cam_filter_R = OneEuroFilter(mincutoff=0.15, beta=0.02)
+        coords = [((rx0+p.x*rw), (ry0+p.y*rh)) for p in points]
+        flex = max(0, min(170, 180-calculate_angle(*coords)))
+        buf = _leg_flexbuf['active']
+        buf.append(flex)
+        median = sorted(buf)[len(buf)//2]
+        filt = cam_filter_L if side == 'left' else cam_filter_R
+        current_angle = int(round(filt.update(median, now)))
+        camera_last_data = now
+        draw_points = [(int(w-x), int(y)) for x,y in coords]
+        cv2.line(frame, draw_points[0], draw_points[1], (0,220,150), 5)
+        cv2.line(frame, draw_points[1], draw_points[2], (0,220,150), 5)
+        cv2.circle(frame, draw_points[1], 8, (0,0,255), -1)
+    if crowd_mode:
+        cv2.rectangle(frame, (w-rx1, ry0), (w-rx0, ry1), (255,180,0), 2)
+    captured_at = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    label = f"Camera: {current_angle} deg | {side or 'auto'}" if status['ready'] else 'CHO HINH DU RO - KHONG GHI GOC'
+    cv2.putText(frame, label, (16,30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,220,150) if status['ready'] else (0,180,255), 2)
+    cv2.putText(frame, captured_at, (16,58), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,255,255), 2)
+    ok, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    jpeg = buffer.tobytes() if ok else None
+    if jpeg and status['ready'] and (_camera_peak is None or current_angle > max_rom_session):
+        max_rom_session = current_angle
+        _camera_peak = {'jpeg': jpeg, 'angle': current_angle, 'captured_at': captured_at,
+                        'side': side, 'owner': _hardware_owner, 'generation': _hardware_generation}
+    return jpeg
 
-        # ten + mau theo lua chon chan (chi de ghi nhan, khong anh huong nhan dien)
-        if cam_leg == "right":
-            name, color, filt = "Phai", (0, 200, 255), cam_filter_R
-        elif cam_leg == "left":
-            name, color, filt = "Trai", (0, 255, 0), cam_filter_L
-        else:
-            name, color, filt = "Chan do", (0, 255, 0), cam_filter_L
 
-        key = "active"
-        solid = False; draw = False
-        if vis > VIS_TH:
-            hx = (rx0 + Hh.x * rw) / w; hy = (ry0 + Hh.y * rh) / h
-            kx = (rx0 + Kk.x * rw) / w; ky = (ry0 + Kk.y * rh) / h
-            ax = (rx0 + Aa.x * rw) / w; ay = (ry0 + Aa.y * rh) / h
-            # --- NEO HONG: chong lung ghe che/danh lua diem hong ---
-            anc = _hip_anchor.get(key)
-            if anc is None:
-                _hip_anchor[key] = [hx, hy]            # khoi tao neo
-            else:
-                hip_ok = (Hh.visibility > VIS_TH and
-                          ((hx - anc[0]) ** 2 + (hy - anc[1]) ** 2) ** 0.5 <= HIP_JUMP)
-                if hip_ok:                             # hong dang ro & gan -> cap nhat cham (EMA)
-                    anc[0] += (hx - anc[0]) * HIP_EMA
-                    anc[1] += (hy - anc[1]) * HIP_EMA
-                # else: hong bi che/nhay xa -> GIU nguyen neo (hong ngoi it di chuyen)
-            hx, hy = _hip_anchor[key]                  # dung hong da neo cho tinh goc & ve
-            # LOC THEO CHUYEN DONG: chi nhan neu dau goi khong nhay qua xa frame truoc
-            lp = _leg_lastpos.get(key)
-            if lp is None or (tnow - lp[2]) >= RELOCK_S or \
-               ((kx - lp[0]) ** 2 + (ky - lp[1]) ** 2) ** 0.5 <= MAX_JUMP:
-                _leg_lastpos[key] = (kx, ky, tnow)
-                raw_angle = calculate_angle([hx * w, hy * h], [kx * w, ky * h], [ax * w, ay * h])
-                flex = max(0, min(170, 180 - raw_angle))   # DUOI THANG = 0, gap cang nhieu cang TANG
-                buf = _leg_flexbuf[key]; buf.append(flex)
-                med = sorted(buf)[len(buf) // 2]      # MEDIAN-of-5: diet gai nhon
-                sm = filt.update(med, tnow)           # One-Euro lam muot
-                _leg_persist[key] = {
-                    "hip":   (int((1 - hx) * w), int(hy * h)),
-                    "knee":  (int((1 - kx) * w), int(ky * h)),
-                    "ankle": (int((1 - ax) * w), int(ay * h)),
-                    "sm": sm, "t": tnow}
-                solid = True; draw = True
-        if not draw:
-            # rot khop / nhay xa -> GIU landmark cu neu con moi (< HOLD_S)
-            p = _leg_persist.get(key)
-            if p and (tnow - p["t"]) <= HOLD_S:
-                sm = p["sm"]; draw = True
-        if draw:
-            p = _leg_persist[key]
-            th = 6 if solid else 3
-            cv2.line(frame, p["hip"], p["knee"], color, th)
-            cv2.line(frame, p["knee"], p["ankle"], color, th)
-            cv2.circle(frame, p["knee"], 9, (0, 0, 255), -1)
-            cv2.putText(frame, f"{name}: {int(round(sm))} do", (p["knee"][0]-60, p["knee"][1]-15),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 3)
-            current_angle = int(round(sm))
-            if solid: camera_last_data = time.monotonic()
-            if current_angle > max_rom_session: max_rom_session = current_angle
-
-    ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    return buffer.tobytes() if ret else None
 
 def _open_camera():
     global cv2, mp_pose, camera, pose
     cv2 = importlib.import_module("cv2")
-    mp = importlib.import_module("mediapipe")
-    if not hasattr(mp, "solutions"):
-        raise RuntimeError("MediaPipe solutions API unavailable; install the supported camera requirements")
-    mp_pose = mp.solutions.pose
-    camera = cv2.VideoCapture(CAMERA_SOURCE)
+    mp_pose = SimpleNamespace(PoseLandmark=PoseLandmark)
+    source, backend, name = CAMERA_SOURCE, cv2.CAP_ANY, str(CAMERA_SOURCE)
+    if isinstance(source, str) and not source.startswith(("http://", "https://", "rtsp://")):
+        enumerator = importlib.import_module("cv2_enumerate_cameras")
+        candidates = list(enumerator.enumerate_cameras(cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY))
+        matches = [item for item in candidates if item.name.casefold() == source.casefold()]
+        if len(matches) != 1:
+            raise OSError(f"Camera {source!r} not found uniquely. Open Camo Studio and its camera compatibility add-on.")
+        selected = matches[0]
+        source, backend, name = selected.index, selected.backend, selected.name
+    camera = cv2.VideoCapture(source, backend)
     if not camera.isOpened():
         raise OSError("Camera unavailable")
-    camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    camera.set(cv2.CAP_PROP_FPS, 30)
+    # Virtual cameras expose raw formats; forcing MJPG can break Camo's driver.
+    if "camo" not in name.casefold():
+        camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+    camera.set(cv2.CAP_PROP_FPS, CAMERA_FPS)
+    _camera_details.update(name=name, width=int(camera.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                           height=int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+                           fps=round(camera.get(cv2.CAP_PROP_FPS), 1))
+    logger.info("Camera %s: %sx%s at %s FPS", name, _camera_details["width"],
+                _camera_details["height"], _camera_details["fps"])
     camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    pose = mp_pose.Pose(model_complexity=1, smooth_landmarks=True,
-                        min_detection_confidence=0.5, min_tracking_confidence=0.5)
+    pose = TasksPose(POSE_MODEL)
+    _camera_details.update(pose_api="Tasks API", pose_model="Full", pose_mode="VIDEO")
 
 
 def _camera_worker():
@@ -789,6 +956,8 @@ def _camera_worker():
         failures = 0
         while not _stop_event.is_set() and _hardware_active():
             started = time.monotonic()
+            with _state_lock:
+                captured_generation = _hardware_generation
             success, frame = camera.read()
             if not success:
                 failures += 1
@@ -798,17 +967,19 @@ def _camera_worker():
                 continue
             failures = 0
             with _state_lock:
+                if captured_generation != _hardware_generation or not _hardware_active():
+                    continue
                 jpeg = _process_camera_frame(frame)
-            if jpeg is not None:
-                with _frame_condition:
-                    _latest_frame = jpeg
-                    _frame_number += 1
-                    _camera_error = None
-                    _frame_condition.notify_all()
+                if jpeg is not None:
+                    with _frame_condition:
+                        _latest_frame = jpeg
+                        _frame_number += 1
+                        _camera_error = None
+                        _frame_condition.notify_all()
             _stop_event.wait(max(0, 1 / 30 - (time.monotonic() - started)))
     except Exception:
         logger.exception("Camera worker stopped")
-        _camera_error = "Không thể mở hoặc xử lý camera. Kiểm tra thiết bị và cấu hình."
+        _camera_error = "Không thể mở camera. Mở Camo Studio, ghép điện thoại và kiểm tra đã có hình trong Camo."
     finally:
         if camera is not None:
             camera.release()
@@ -855,9 +1026,32 @@ def generate_frames(patient_id):
         yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
 
 
+@app.route("/measurement/start", methods=["POST"])
+def measurement_start():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify(success=False, message='Yêu cầu bắt đầu đo không hợp lệ.'), 400
+    if payload.get("combined"):
+        _reset_tracking()
+    return jsonify(success=True, active=True)
+
+
+@app.route("/measurement/stop", methods=["POST"])
+def measurement_stop():
+    global _hardware_owner, _hardware_last_seen
+    with _state_lock:
+        if _hardware_owner == session["user_id"]:
+            _hardware_owner = None
+            _hardware_last_seen = 0.0
+            _reset_tracking()
+    return jsonify(success=True, active=False)
+
+
 @app.route("/health")
 def health():
-    return jsonify(status="ok", app="KneeROM")
+    return jsonify(status="ok", app="KneeROM", build="no-game-ble-20261104",
+                   pose_api="tasks", pose_model_ready=POSE_MODEL.is_file(),
+                   llm_runtime="LiteRT-LM", llm_ready=_summary_jobs.available())
 
 
 @app.route('/video_feed')
@@ -869,20 +1063,56 @@ def video_feed():
         _frame_condition.wait_for(lambda: _latest_frame is not None or _camera_error is not None, timeout=8)
     if _latest_frame is None:
         return jsonify(success=False, message=_camera_error or "Camera chưa sẵn sàng."), 503
-    return Response(generate_frames(session["user_id"]), mimetype='multipart/x-mixed-replace; boundary=frame')
+    if not _stream_slots.acquire(blocking=False):
+        return jsonify(success=False, message="Đang mở nhiều cửa sổ camera. Đóng bớt cửa sổ rồi thử lại."), 429
+    frames = generate_frames(session["user_id"])
+    released = False
+    def release_slot():
+        nonlocal released
+        if not released:
+            released = True
+            _stream_slots.release()
+    def bounded_frames():
+        try:
+            yield from frames
+        finally:
+            release_slot()
+    response = Response(bounded_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Cache-Control"] = "no-store, no-cache, max-age=0"
+    response.call_on_close(release_slot)
+    return response
 
 @app.route("/get_angle")
 def get_angle():
     _start_camera()
     with _state_lock:
         age = time.monotonic() - camera_last_data if camera_last_data else None
-        return jsonify(angle=current_angle, tracking=age is not None and age < 1, age=age,
-                       camera_available=_camera_error is None, message=_camera_error)
+        return jsonify(angle=current_angle, tracking=_camera_quality.status['ready'] and age is not None and age < 1, age=age, quality=_camera_quality.status, snapshot_ready=_camera_peak is not None,
+                       camera_available=_camera_error is None,
+                       stream_ready=_latest_frame is not None and _camera_thread is not None and _camera_thread.is_alive(),
+                       message=_camera_error, active=True, camera=_camera_details)
 
 @app.route("/get_max_rom")
 def get_max_rom():
     with _state_lock:
         return jsonify(max_rom=max_rom_session)
+
+
+@app.route('/measurement/status')
+def combined_status():
+    _start_camera()
+    with _state_lock:
+        now = time.monotonic()
+        camera_age = now-camera_last_data if camera_last_data else None
+        imu_age = now-imu_last_data if imu_last_data else None
+        ready = _camera_quality.status['ready'] and camera_age is not None and camera_age < 1
+        receiving = USE_IMU and imu_connected and not imu_calibrating and imu_age is not None and imu_age < 3
+        return jsonify(active=True, camera=dict(angle=current_angle, max_rom=max_rom_session,
+            tracking=ready, age=camera_age, quality=_camera_quality.status, snapshot_ready=_camera_peak is not None,
+            stream_ready=_latest_frame is not None and _camera_thread is not None and _camera_thread.is_alive(),
+            message=_camera_error, camera=_camera_details), imu=dict(angle=imu_angle, max_rom=imu_max_rom,
+            receiving=receiving, connected=imu_connected, age=imu_age, jitter=imu_jitter, calibrating=imu_calibrating))
 
 @app.route("/set_leg/<leg>", methods=["POST"])
 def set_leg(leg):
@@ -892,6 +1122,7 @@ def set_leg(leg):
     if leg in ("left", "right", "auto"):
         with _state_lock:
             cam_leg = leg
+            _reset_tracking()
             _leg_persist["active"] = _leg_lastpos["active"] = _hip_anchor["active"] = None
             _leg_flexbuf["active"].clear()
         return jsonify({"success": True, "leg": leg})
@@ -905,6 +1136,7 @@ def toggle_crowd():
     if "user_id" not in session: return jsonify({"success": False}), 401
     with _state_lock:
         crowd_mode = not crowd_mode
+        _reset_tracking()
         _leg_persist["active"] = _leg_lastpos["active"] = _hip_anchor["active"] = None
         _leg_flexbuf["active"].clear()
     return jsonify({"success": True, "crowd": crowd_mode})
@@ -923,7 +1155,7 @@ def get_imu_max_rom():
 @app.route("/imu_status")
 def imu_status():
     receiving = imu_connected and imu_last_data > 0 and (time.monotonic() - imu_last_data < 3.0)
-    where = f"{IMU_HOST}:{IMU_TCP_PORT}" if IMU_MODE == "wifi" else current_port
+    where = f"{IMU_HOST}:{IMU_TCP_PORT}" if IMU_MODE == "wifi" else (os.getenv("ACL_BLE_NAME", "KneeROM_7C0A7C") if IMU_MODE == "ble" else current_port)
     return jsonify({"connected": imu_connected, "receiving": receiving, "use_imu": USE_IMU,
                     "jitter": round(imu_jitter, 1), "calibrating": imu_calibrating,
                     "mode": IMU_MODE, "where": where, "port": current_port})
@@ -941,7 +1173,7 @@ def set_imu_mode(mode):
     """Chuyen kieu ket noi IMU luc dang chay: 'serial' (USB) hoac 'wifi'."""
     global IMU_MODE, _want_reconnect
     if "user_id" not in session: return jsonify({"success": False}), 401
-    if mode not in ("serial", "wifi"):
+    if mode not in ("ble", "serial", "wifi"):
         return jsonify({"success": False, "message": "Kieu khong hop le"})
     IMU_MODE = mode
     _want_reconnect = True               # ngat ket noi cu -> luong tu noi lai theo mode moi
@@ -970,9 +1202,11 @@ def imu_connect(port):
 def imu_cmd(cmd):
     if "user_id" not in session: return jsonify({"success": False, "message": "Chua dang nhap"}), 401
     cmd = cmd.upper()
-    if cmd not in ("C", "L"):
+    if cmd not in ("C", "F", "L", "R"):
         return jsonify({"success": False, "message": "Lenh khong hop le"})
     ok = imu_send(cmd)
+    if ok and cmd in ('C', 'F', 'R'):
+        _reset_tracking()
     return jsonify({"success": ok, "message": ("Da gui lenh " + cmd) if ok else "Cam bien IMU chua ket noi"})
 
 @app.route("/get_measurements")
@@ -987,9 +1221,11 @@ def get_measurements():
 
 @app.route("/reset_rom/<source>", methods=["POST"])
 def reset_rom(source):
-    global max_rom_session, imu_max_rom, camera_last_data, imu_last_data
+    global max_rom_session, imu_max_rom, camera_last_data, imu_last_data, _camera_peak
     with _state_lock:
         if source == "camera":
+            _camera_peak = None
+            _camera_quality.reset()
             max_rom_session = 0
             camera_last_data = 0.0
         elif source == "imu":
@@ -1000,115 +1236,68 @@ def reset_rom(source):
     return jsonify(success=True)
 
 
-def _default_target(week):
-    """Muc tieu ROM mac dinh theo tuan phuc hoi."""
-    if week <= 2:
-        return 80
-    if week <= 6:
-        return 105
-    return 125
 
-
-@app.route("/game")
-def game():
-    """Game phuc hoi: gap dung muc tieu moi sut duoc.
-    Muc tieu = ROM tuy chinh cua benh nhan (neu bac si/BN da dat), khong thi theo tuan."""
-    if "user_id" not in session or session["role"] != "patient":
-        return redirect(url_for("home"))
-    conn = connect_db()
-    cur = conn.cursor()
-    cur.execute("SELECT week, rom_goal, rom_goal_days, rom_goal_start FROM users WHERE id = ?",
-                (session["user_id"],))
-    row = cur.fetchone()
-    # ROM tot nhat tu truoc den nay (de hien tien do)
-    cur.execute("SELECT MAX(angle) FROM measurements WHERE patient_id = ?", (session["user_id"],))
-    bestrow = cur.fetchone()
-    conn.close()
-
-    week = row[0] if row and row[0] else 1
-    goal, goal_days, goal_start = (row[1], row[2], row[3]) if row else (None, None, None)
-    best_ever = int(bestrow[0]) if bestrow and bestrow[0] else 0
-
-    # con bao nhieu ngay den han
-    days_left = None
-    if goal and goal_days and goal_start:
-        try:
-            start = datetime.datetime.strptime(goal_start, "%Y-%m-%d")
-            days_left = goal_days - (datetime.datetime.now() - start).days
-        except ValueError:
-            days_left = None
-
-    target = goal if goal else _default_target(week)
-    return render_template("game.html", name=session["name"], week=week, target=target, tol=12,
-                           goal=goal or 0, goal_days=goal_days or 14,
-                           days_left=(days_left if days_left is not None else -999),
-                           best_ever=best_ever, default_target=_default_target(week))
-
-
-@app.route("/set_goal", methods=["POST"])
-def set_goal():
-    """Dat muc tieu ROM tuy chinh: dat <goal> do trong <days> ngay."""
-    if "user_id" not in session:
-        return jsonify({"success": False, "message": "Chua dang nhap"}), 401
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify(success=False, message="Dữ liệu phải là đối tượng JSON."), 400
+def _save_camera_capture(conn, measurement_id, measured_at, imu_value=None, imu_id=None):
+    """Write one peak JPEG; caller commits image metadata and measurements together."""
+    peak = _camera_peak
+    if not peak or peak['owner'] != session['user_id'] or peak['generation'] != _hardware_generation:
+        raise ValueError('Chưa có ảnh hợp lệ của lượt đo này.')
+    CARE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    name = secrets.token_hex(24) + '.jpg'
+    destination = CARE_UPLOAD_DIR / name
+    temporary = destination.with_suffix('.tmp')
     try:
-        goal = int(data.get("goal", 0))
-        days = int(data.get("days", 14))
-    except (TypeError, ValueError, OverflowError):
-        return jsonify({"success": False, "message": "Gia tri khong hop le"}), 400
-    if goal < 0 or goal > 150 or (goal > 0 and goal < 30) or not 1 <= days <= 180:
-        return jsonify(success=False, message="Mục tiêu phải từ 30–150 độ, thời gian từ 1–180 ngày."), 400
-    conn = connect_db()
-    cur = conn.cursor()
-    if goal <= 0:  # bo muc tieu -> quay ve mac dinh theo tuan
-        cur.execute("UPDATE users SET rom_goal=NULL, rom_goal_days=NULL, rom_goal_start=NULL WHERE id=?",
-                    (session["user_id"],))
-        conn.commit()
-        conn.close()
-        return jsonify({"success": True, "cleared": True})
-    goal = max(30, min(150, goal))
-    days = max(1, min(180, days))
-    start = datetime.datetime.now().strftime("%Y-%m-%d")
-    cur.execute("UPDATE users SET rom_goal=?, rom_goal_days=?, rom_goal_start=? WHERE id=?",
-                (goal, days, start, session["user_id"]))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": True, "goal": goal, "days": days, "start": start})
+        temporary.write_bytes(peak['jpeg'])
+        temporary.replace(destination)
+        note = (f"Ảnh tự động tại ROM camera lớn nhất: {peak['angle']}°. "
+                f"Chụp lúc {peak['captured_at']}. Lượt camera #{measurement_id}.")
+        if imu_value is not None:
+            note += f" ROM IMU lớn nhất trong cùng lượt đo: {imu_value}° (#{imu_id}). Hai giá trị cực đại có thể ở hai thời điểm khác nhau."
+        conn.execute('INSERT INTO care_updates(patient_id,image_name,note,pain_level,limb_side,created_at) VALUES(?,?,?,?,?,?)',
+                     (session['user_id'], name, note, None, peak['side'], measured_at))
+        update_id = conn.execute('SELECT id FROM care_updates WHERE patient_id=? AND image_name=?',
+                                 (session['user_id'], name)).fetchone()[0]
+        return destination, update_id
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        destination.unlink(missing_ok=True)
+        raise
 
 
-@app.route("/game_save", methods=["POST"])
-def game_save():
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify(success=False, message="Dữ liệu phải là đối tượng JSON."), 400
-    try:
-        raw_rom = float(data["rom"])
-        if isinstance(data["rom"], bool) or not math.isfinite(raw_rom) or not 0 <= raw_rom <= 180:
-            raise ValueError
-        rom = round(raw_rom, 1)
-    except (TypeError, ValueError, OverflowError, KeyError):
-        return jsonify(success=False, message="Góc ROM phải là số từ 0 đến 180."), 400
-    source = data.get("source", "camera")
-    if source not in ("camera", "imu"):
-        return jsonify(success=False, message="Nguồn không hợp lệ."), 400
+@app.route('/measurement/save_combined', methods=['POST'])
+def save_combined():
+    global max_rom_session, imu_max_rom, camera_last_data, imu_last_data, _camera_peak
     with _state_lock:
-        sampled_at = camera_last_data if source == "camera" else imu_last_data
-        observed_max = max_rom_session if source == "camera" else imu_max_rom
-        if not sampled_at or time.monotonic() - sampled_at > 3 or (source == "imu" and not imu_connected):
-            return jsonify(success=False, message="Chưa có tín hiệu đo mới từ thiết bị."), 409
-        if rom > observed_max + 1:
-            return jsonify(success=False, message="Kết quả vượt quá góc ROM thiết bị ghi nhận."), 400
+        now = time.monotonic()
+        if not _camera_quality.status['ready'] or not camera_last_data or now-camera_last_data > 1 or not _camera_peak:
+            return jsonify(success=False, message='Camera chưa có hình đủ rõ. Đưa đủ hông–gối–cổ chân vào khung.'), 409
+        if not USE_IMU or not imu_connected or imu_calibrating or not imu_last_data or now-imu_last_data > 3:
+            return jsonify(success=False, message='Chưa có tín hiệu IMU mới. Kiểm tra cảm biến trước khi lưu cả hai kết quả.'), 409
+        values = {'camera': max_rom_session, 'imu': imu_max_rom}
+        measured_at = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         conn = connect_db()
+        image_path = None
         try:
-            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute("INSERT INTO measurements(patient_id, angle, time, source) VALUES (?, ?, ?, ?)",
-                         (session["user_id"], rom, ts, source))
+            ids = {source: insert_measurement(conn, session['user_id'], value, measured_at, source)
+                   for source, value in values.items()}
+            image_path, update_id = _save_camera_capture(conn, ids['camera'], measured_at, values['imu'], ids['imu'])
             conn.commit()
+        except (*DatabaseError, OSError, ValueError):
+            conn.rollback()
+            if image_path is not None:
+                image_path.unlink(missing_ok=True)
+            logger.exception('Could not save paired measurement')
+            return jsonify(success=False, message='Chưa lưu được lượt đo. Kết quả vẫn được giữ để bạn thử lại.'), 503
         finally:
             conn.close()
-    return jsonify(success=True, rom=rom)
+        captured_at = _camera_peak['captured_at']
+        _camera_peak = None
+        max_rom_session = imu_max_rom = 0
+        camera_last_data = imu_last_data = 0.0
+        return jsonify(success=True, camera_rom=values['camera'], imu_rom=values['imu'],
+                       camera_id=ids['camera'], imu_id=ids['imu'], time=measured_at,
+                       snapshot_url=url_for('care_image', update_id=update_id), captured_at=captured_at)
+
 
 
 @app.route("/save_rom/<source>", methods=["POST"])
@@ -1124,10 +1313,10 @@ def save_rom(source):
         conn = connect_db()
         try:
             full_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor = conn.execute("INSERT INTO measurements(patient_id, angle, time, source) VALUES (?, ?, ?, ?)",
-                                  (session["user_id"], value, full_time_str, source))
+            new_id = insert_measurement(
+                conn, session["user_id"], value, full_time_str, source
+            )
             conn.commit()
-            new_id = cursor.lastrowid
         finally:
             conn.close()
         if source == "camera":
@@ -1166,7 +1355,7 @@ def export_excel(pid):
         return "Không có quyền truy cập", 403
     conn = connect_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT name, age, week FROM users WHERE id = ?", (pid,))
+    cursor.execute("SELECT name, age, week FROM patients WHERE id = ?", (pid,))
     u = cursor.fetchone()
     if not u:
         conn.close()
@@ -1206,9 +1395,9 @@ def export_all():
     conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT users.name, measurements.angle, measurements.time, measurements.source
-        FROM measurements LEFT JOIN users ON users.id = measurements.patient_id
-        ORDER BY users.name, measurements.id
+        SELECT patients.name, measurements.angle, measurements.time, measurements.source
+        FROM measurements LEFT JOIN patients ON patients.id = measurements.patient_id
+        ORDER BY patients.name, measurements.id
     """)
     rows = cursor.fetchall()
     conn.close()
@@ -1254,7 +1443,7 @@ def export_compare(pid):
     if session["role"] != "doctor" and session["user_id"] != pid:
         return "Không có quyền truy cập", 403
     conn = connect_db(); cur = conn.cursor()
-    cur.execute("SELECT name FROM users WHERE id = ?", (pid,))
+    cur.execute("SELECT name FROM patients WHERE id = ?", (pid,))
     u = cur.fetchone()
     if not u:
         conn.close(); return "Không tìm thấy bệnh nhân", 404
@@ -1361,22 +1550,95 @@ def admin():
 
     conn = connect_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'patient'")
+    cursor.execute("SELECT COUNT(*) FROM patients")
     total_patients = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM measurements")
     total_measurements = cursor.fetchone()[0]
-    cursor.execute("SELECT id, name, age, week, username FROM users WHERE role = 'patient'")
+    cursor.execute("SELECT COUNT(*) FROM care_updates")
+    total_care_updates = cursor.fetchone()[0]
+    cursor.execute("SELECT id, name, age, week, username FROM patients")
     patients = cursor.fetchall()
+    cursor.execute("SELECT id, username, name FROM doctors ORDER BY id")
+    doctors = cursor.fetchall()
     cursor.execute("""
-        SELECT measurements.id, users.name, measurements.angle, measurements.time
+        SELECT measurements.id, patients.name, measurements.angle, measurements.time
         FROM measurements
-        LEFT JOIN users ON users.id = measurements.patient_id
+        LEFT JOIN patients ON patients.id = measurements.patient_id
         ORDER BY measurements.id DESC
     """)
     measurements = cursor.fetchall()
     conn.close()
 
-    return render_template("admin_dashboard.html", total_patients=total_patients, total_measurements=total_measurements, patients=patients, measurements=measurements)
+    return render_template("admin_dashboard.html", total_patients=total_patients,
+                           total_measurements=total_measurements,
+                           total_care_updates=total_care_updates, patients=patients,
+                           measurements=measurements, doctors=doctors,
+                           can_manage_doctors=True,
+                           doctor_message=request.args.get("doctor_message", ""),
+                           doctor_error=request.args.get("doctor_error", ""))
+
+
+def _doctor_admin_required():
+    admin_username = os.getenv("ACL_ADMIN_USERNAME", "admin").strip().lower()
+    username = session.get("username", "").strip().lower()
+    return ("user_id" in session and session.get("role") == "doctor" and
+            username in {"admin", admin_username})
+
+
+def _valid_doctor_username(value):
+    return 3 <= len(value) <= 64 and all(ch.isalnum() or ch in "._-" for ch in value)
+
+
+@app.route("/admin/doctors/create", methods=["POST"])
+def admin_doctor_create():
+    if not _doctor_admin_required():
+        return redirect(url_for("home"))
+    username = request.form.get("username", "").strip().lower()
+    name = request.form.get("name", "").strip()
+    password = request.form.get("password", "")
+    if not _valid_doctor_username(username) or not name or len(name) > 120 or len(password) < 10:
+        return redirect(url_for("admin", doctor_error="Thông tin không hợp lệ; mật khẩu cần ít nhất 10 ký tự."))
+    conn = connect_db()
+    try:
+        conn.execute("INSERT INTO doctors(username,password,name) VALUES(?,?,?)",
+                     (username, generate_password_hash(password), name))
+        conn.commit()
+    except IntegrityError:
+        conn.rollback()
+        return redirect(url_for("admin", doctor_error="Tên đăng nhập bác sĩ đã tồn tại."))
+    finally:
+        conn.close()
+    return redirect(url_for("admin", doctor_message="Đã tạo tài khoản bác sĩ."))
+
+
+@app.route("/admin/doctors/<int:doctor_id>/password", methods=["POST"])
+def admin_doctor_password(doctor_id):
+    if not _doctor_admin_required():
+        return redirect(url_for("home"))
+    password = request.form.get("password", "")
+    if len(password) < 10:
+        return redirect(url_for("admin", doctor_error="Mật khẩu cần ít nhất 10 ký tự."))
+    conn = connect_db()
+    cursor = conn.execute("UPDATE doctors SET password=? WHERE id=?",
+                          (generate_password_hash(password), doctor_id))
+    conn.commit()
+    conn.close()
+    message = "Đã đổi mật khẩu bác sĩ." if cursor.rowcount else "Không tìm thấy bác sĩ."
+    return redirect(url_for("admin", doctor_message=message))
+
+
+@app.route("/admin/doctors/<int:doctor_id>/delete", methods=["POST"])
+def admin_doctor_delete(doctor_id):
+    if not _doctor_admin_required():
+        return redirect(url_for("home"))
+    if doctor_id == session.get("user_id"):
+        return redirect(url_for("admin", doctor_error="Không thể xóa tài khoản đang đăng nhập."))
+    conn = connect_db()
+    cursor = conn.execute("DELETE FROM doctors WHERE id=?", (doctor_id,))
+    conn.commit()
+    conn.close()
+    message = "Đã xóa tài khoản bác sĩ." if cursor.rowcount else "Không tìm thấy bác sĩ."
+    return redirect(url_for("admin", doctor_message=message))
 
 @app.route("/admin/patient/<int:pid>")
 def admin_patient_view(pid):
@@ -1386,7 +1648,7 @@ def admin_patient_view(pid):
     conn = connect_db()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id, name, age, week, username, doctor_advice FROM users WHERE id=?", (pid,))
+    cursor.execute("SELECT id, name, age, week, username, doctor_advice FROM patients WHERE id=?", (pid,))
     user = cursor.fetchone()
     
     if not user:
@@ -1395,9 +1657,92 @@ def admin_patient_view(pid):
         
     cursor.execute("SELECT angle, time, source, id FROM measurements WHERE patient_id=? ORDER BY id DESC", (pid,))
     history = cursor.fetchall()
+    updates = _care_updates_for(conn, pid)
     conn.close()
 
-    return render_template("admin_patients_view.html", user=user, history=history)
+    return render_template(
+        "admin_patients_view.html",
+        user=user,
+        history=history,
+        updates=updates,
+        care_message=request.args.get("care_message", ""),
+        care_error=request.args.get("care_error", ""),
+    )
+
+
+@app.route('/admin/patient/<int:pid>/ai-summary', methods=['POST'])
+def doctor_ai_summary(pid):
+    if 'user_id' not in session:
+        return jsonify(success=False, message='Vui lòng đăng nhập bác sĩ.'), 401
+    if session.get('role') != 'doctor':
+        return jsonify(success=False, message='Chỉ bác sĩ được tạo bản tóm tắt.'), 403
+    conn = connect_db()
+    if conn.execute('SELECT 1 FROM patients WHERE id=?', (pid,)).fetchone() is None:
+        return jsonify(success=False, message='Không tìm thấy bệnh nhân.'), 404
+    rows = conn.execute('SELECT angle,time,source FROM measurements WHERE patient_id=? ORDER BY id DESC LIMIT 100', (pid,)).fetchall()
+    if not rows:
+        return jsonify(success=False, message='Chưa có dữ liệu đo để tóm tắt.'), 409
+    try:
+        job_id = _summary_jobs.start(session['user_id'], pid, summarize_facts(rows))
+    except FileNotFoundError:
+        return jsonify(success=False, message='LiteRT-LM chưa sẵn sàng trên máy chủ.'), 503
+    if job_id is None:
+        return jsonify(success=False, message='AI đang xử lý một bản tóm tắt. Thử lại sau ít phút.'), 429
+    return jsonify(success=True, job_id=job_id, state='running'), 202
+
+
+@app.route('/admin/patient/<int:pid>/ai-summary/<job_id>')
+def doctor_ai_summary_status(pid, job_id):
+    if 'user_id' not in session:
+        return jsonify(success=False, message='Vui lòng đăng nhập bác sĩ.'), 401
+    if session.get('role') != 'doctor':
+        return jsonify(success=False, message='Chỉ bác sĩ được xem bản tóm tắt.'), 403
+    job = _summary_jobs.get(job_id, session['user_id'], pid)
+    if job is None:
+        return jsonify(success=False, message='Không tìm thấy bản tóm tắt của phiên này.'), 404
+    return jsonify(success=True, **job)
+
+
+@app.route("/admin/care/<int:update_id>/reply", methods=["POST"])
+def admin_care_reply(update_id):
+    if "user_id" not in session or session.get("role") != "doctor":
+        return jsonify(success=False, message="Quyền truy cập bị từ chối"), 403
+    reply = request.form.get("doctor_reply", "").strip()
+    conn = connect_db()
+    row = conn.execute(
+        "SELECT patient_id FROM care_updates WHERE id=?",
+        (update_id,),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return "Không tìm thấy cập nhật.", 404
+    if not reply or len(reply) > 2000:
+        conn.close()
+        return redirect(url_for(
+            "admin_patient_view",
+            pid=row[0],
+            care_error="Phản hồi phải có từ 1 đến 2000 ký tự.",
+        ))
+    conn.execute(
+        """
+        UPDATE care_updates
+        SET doctor_reply=?, doctor_reply_at=?, doctor_id=?
+        WHERE id=?
+        """,
+        (
+            reply,
+            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            session["user_id"],
+            update_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for(
+        "admin_patient_view",
+        pid=row[0],
+        care_message="Đã gửi phản hồi tới bệnh nhân.",
+    ))
 
 
 @app.route("/admin/save_advice/<int:pid>", methods=["POST"])
@@ -1411,7 +1756,7 @@ def admin_save_advice(pid):
     
     conn = connect_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET doctor_advice = ? WHERE id = ?", (advice_text, pid))
+    cursor.execute("UPDATE patients SET doctor_advice = ? WHERE id = ?", (advice_text, pid))
     conn.commit()
     conn.close()
     
@@ -1420,7 +1765,7 @@ def admin_save_advice(pid):
 def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
-    _initialized_databases.add(app.config["DATABASE"])
+    _initialized_databases.add(_database_identity())
     try:
         app.run(host=os.getenv("ACL_HOST", "127.0.0.1"),
                 port=_env_int("ACL_PORT", 5000, 1, 65535),

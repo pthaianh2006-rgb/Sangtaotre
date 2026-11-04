@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BME Rehab - Biểu đồ tiến trình phục hồi</title>
+    <title>KneeROM - Biểu đồ tiến trình phục hồi</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -18,10 +18,22 @@
     </style>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui-v2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='patient-portal.css', v='no-game-20261104') }}">
     <script src="{{ url_for('static', filename='rehab.js') }}"></script>
 </head>
-<body>
+<body class="page-profile patient-portal-page">
     <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
+    {% set patient_active = 'profile' %}
+    {% set patient_display = user[1] %}
+    <div class="patient-shell">
+        {% include '_patient_nav.html' %}
+        <main class="patient-main">
+            <div class="patient-content">
+                <header class="patient-topbar">
+                    <div><h1>Tiến trình ROM</h1><p>Theo dõi biên độ vận động qua từng ngày tập.</p></div>
+                    <div class="patient-topbar-user"><span class="patient-avatar">{{ user[1][0] | upper }}</span><div><b>{{ user[1] }}</b><small>Tuần phục hồi {{ user[3] }}</small></div></div>
+                </header>
     <div class="container">
         <div class="header-card">
             <div>
@@ -38,6 +50,9 @@
             </div>
         </div>
     </div>
+            </div>
+        </main>
+    </div>
     <script>
         const ctx = document.getElementById('kneeChart').getContext('2d');
         new Chart(ctx, {
@@ -48,9 +63,9 @@
                     {
                         label: '📷 Camera (°)',
                         data: {{ cam_angles | safe }},
-                        borderColor: '#0E82FD',
-                        backgroundColor: 'rgba(14, 130, 253, 0.08)',
-                        borderWidth: 3, pointBackgroundColor: '#0E82FD', pointRadius: 5, tension: 0.15, fill: false, spanGaps: true
+                        borderColor: '#0F766E',
+                        backgroundColor: 'rgba(15, 118, 110, 0.08)',
+                        borderWidth: 3, pointBackgroundColor: '#0F766E', pointRadius: 5, tension: 0.15, fill: false, spanGaps: true
                     },
                     {
                         label: '🦵 Cảm biến (°)',

@@ -2,6 +2,7 @@
 
 from html.parser import HTMLParser
 import importlib.util
+import io
 import os
 from pathlib import Path
 import shutil
@@ -13,6 +14,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "aclproject2-main" / "aclproject2-main"
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 
 
 class Scripts(HTMLParser):
@@ -44,6 +47,7 @@ class WebRenderTests(unittest.TestCase):
         env = {
             "ACL_DATABASE": str(Path(cls.temporary.name) / "web.sqlite3"),
             "ACL_EXPORT_DIR": str(Path(cls.temporary.name) / "exports"),
+            "ACL_CARE_UPLOAD_DIR": str(Path(cls.temporary.name) / "care_uploads"),
             "ACL_ENABLE_HARDWARE": "0", "ACL_USE_IMU": "0",
             "ACL_SECRET_KEY": "test-only-render-secret", "ACL_ADMIN_PASSWORD": "",
         }
@@ -56,8 +60,9 @@ class WebRenderTests(unittest.TestCase):
             cls.module.init_db()
         conn = cls.module.connect_db()
         try:
-            conn.execute("INSERT INTO users(id,username,password,role,name,age,week) VALUES(1,'patient','unused','patient',?,30,2)", ('Bệnh nhân <script>alert(1)</script>',))
-            conn.execute("INSERT INTO users(id,username,password,role,name,age,week) VALUES(2,'doctor','unused','doctor','Bác sĩ',40,0)")
+            conn.execute("INSERT INTO patients(id,username,password,name,age,week) VALUES(1,'patient','unused',?,30,2)", ('Bệnh nhân <script>alert(1)</script>',))
+            conn.execute("INSERT INTO patients(id,username,password,name,age,week) VALUES(3,'patient2','unused','Bệnh nhân khác',28,1)")
+            conn.execute("INSERT INTO doctors(id,username,password,name) VALUES(2,'doctor','unused','Bác sĩ')")
             conn.executemany("INSERT INTO measurements(patient_id,angle,time,source) VALUES(1,?,?,?)", [(45, "2026-09-08 10:00:00", "camera"), (90, "2026-09-09 10:00:00", "imu")])
             conn.commit()
         finally:
@@ -72,7 +77,7 @@ class WebRenderTests(unittest.TestCase):
 
     def test_every_screen_renders_and_inline_javascript_parses(self):
         cases = [(None, None, "/"), (1, "patient", "/dashboard"), (1, "patient", "/profile"),
-                 (1, "patient", "/my_records"), (1, "patient", "/game"),
+                 (1, "patient", "/my_records"), (1, "patient", "/care"),
                  (2, "doctor", "/admin"), (2, "doctor", "/admin/patient/1")]
         for user_id, role, route in cases:
             with self.subTest(route=route):
@@ -95,6 +100,51 @@ class WebRenderTests(unittest.TestCase):
         for path in (APP_DIR / "static").glob("*.js"):
             with self.subTest(file=path.name):
                 self.check_javascript(path.read_text(encoding="utf-8"), path.name)
+
+    def test_patient_photo_and_doctor_reply_flow(self):
+        patient = self.module.app.test_client()
+        with patient.session_transaction() as session:
+            session.update(user_id=1, role="patient", name="Bệnh nhân", csrf_token="patient-token")
+        png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+        )
+        response = patient.post(
+            "/care/upload",
+            data={
+                "csrf_token": "patient-token", "pain_level": "4",
+                "limb_side": "right", "note": "Đỡ sưng hơn hôm qua",
+                "image": (io.BytesIO(png), "knee.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 302)
+
+        conn = self.module.connect_db()
+        update = conn.execute("SELECT id FROM care_updates WHERE patient_id=1").fetchone()
+        conn.close()
+        self.assertIsNotNone(update)
+        update_id = update[0]
+        image_response = patient.get(f"/care/image/{update_id}")
+        self.assertEqual(image_response.status_code, 200)
+        image_response.close()
+
+        other_patient = self.module.app.test_client()
+        with other_patient.session_transaction() as session:
+            session.update(user_id=3, role="patient", name="Khác")
+        self.assertEqual(other_patient.get(f"/care/image/{update_id}").status_code, 403)
+
+        doctor = self.module.app.test_client()
+        with doctor.session_transaction() as session:
+            session.update(user_id=2, role="doctor", name="Bác sĩ", csrf_token="doctor-token")
+        detail = doctor.get("/admin/patient/1")
+        self.assertIn("Đỡ sưng hơn hôm qua", detail.get_data(as_text=True))
+        reply = doctor.post(
+            f"/admin/care/{update_id}/reply",
+            data={"csrf_token": "doctor-token", "doctor_reply": "Tiếp tục chườm lạnh sau tập."},
+        )
+        self.assertEqual(reply.status_code, 302)
+        self.assertIn("Tiếp tục chườm lạnh sau tập.", patient.get("/care").get_data(as_text=True))
 
 
 if __name__ == "__main__":

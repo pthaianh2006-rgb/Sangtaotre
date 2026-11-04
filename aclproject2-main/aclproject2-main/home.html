@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BME Rehab - Phục hồi khớp gối | Đăng nhập</title>
+    <title>KneeROM - Phục hồi khớp gối | Đăng nhập</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -53,43 +53,63 @@
     </style>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui-v2.css') }}">
     <script src="{{ url_for('static', filename='rehab.js') }}"></script>
 </head>
-<body>
+<body class="page-auth">
     <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
     <div class="card">
         <div class="brand">
-            <div class="logo"><span>🦴</span> BME Rehab</div>
-            <h2>Phục hồi chức năng<br>khớp gối thông minh</h2>
+            <div class="logo"><span>KR</span> KneeROM</div>
+            <div class="brand-kicker">Đo lường · Theo dõi · Phục hồi</div>
+            <h2>Phục hồi đầu gối<br>chính xác hơn mỗi ngày</h2>
             <p>Theo dõi tầm vận động (ROM) bằng camera AI và cảm biến IMU, đồng hành cùng bác sĩ trong suốt quá trình hồi phục.</p>
             <div class="feats">
                 <div class="feat"><i>📷</i> Đo góc gập bằng camera MediaPipe</div>
                 <div class="feat"><i>🦵</i> Cảm biến IMU không dây độ chính xác cao</div>
                 <div class="feat"><i>📊</i> Biểu đồ tiến trình &amp; tư vấn từ bác sĩ</div>
             </div>
+            <img class="doctor-hero" src="{{ url_for('static', filename='doctor-login-hero.png') }}" alt="Bác sĩ phục hồi chức năng KneeROM">
+            <div class="brand-proof"><span>Đo song song Camera + IMU</span><span>Theo dõi theo từng buổi</span></div>
         </div>
 
         <div class="panel">
             <h1>Chào mừng trở lại 👋</h1>
-            <div class="subtitle">Đăng nhập để tiếp tục buổi tập của bạn</div>
+            <div class="subtitle">Đăng nhập để tiếp tục sử dụng KneeROM</div>
+            <div class="access-note" role="note">
+                <span class="access-note-icon">↳</span>
+                <div><b>Chọn đúng cổng tài khoản bên dưới</b><small>Dữ liệu bệnh nhân và tài khoản bác sĩ được quản lý độc lập.</small></div>
+            </div>
 
             {% if msg %}
                 <div class="alert alert-{{ category }}">{{ msg }}</div>
             {% endif %}
 
-            <div class="tabs" role="tablist" aria-label="Tài khoản">
-                <button type="button" class="tab active" role="tab" id="login-tab" aria-controls="login-panel" aria-selected="true" onclick="switchTab('login-panel', this)">Đăng nhập</button>
-                <button type="button" class="tab" role="tab" id="register-tab" aria-controls="register-panel" aria-selected="false" tabindex="-1" onclick="switchTab('register-panel', this)">Đăng ký bệnh nhân</button>
+            <div class="tabs" role="tablist" aria-label="Cổng tài khoản" data-initial-portal="{{ active_portal|default('patient') }}">
+                <button type="button" class="tab active" role="tab" id="patient-login-tab" data-portal="patient" aria-controls="patient-login-panel" aria-selected="true" onclick="switchTab('patient-login-panel', this)">Bệnh nhân</button>
+                <button type="button" class="tab" role="tab" id="doctor-login-tab" data-portal="doctor" aria-controls="doctor-login-panel" aria-selected="false" tabindex="-1" onclick="switchTab('doctor-login-panel', this)">Bác sĩ</button>
+                <button type="button" class="tab" role="tab" id="register-tab" data-portal="register" aria-controls="register-panel" aria-selected="false" tabindex="-1" onclick="switchTab('register-panel', this)">Đăng ký</button>
             </div>
 
-            <div id="login-panel" class="form-panel active" role="tabpanel" aria-labelledby="login-tab">
-                <form action="/login" method="POST">
+            <div id="patient-login-panel" class="form-panel active" role="tabpanel" aria-labelledby="patient-login-tab">
+                <form action="/login/patient" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <label for="login-username">Tên đăng nhập</label>
-                    <input id="login-username" type="text" name="username" autocomplete="username" maxlength="64" autocapitalize="none" spellcheck="false" placeholder="Nhập tài khoản" required>
-                    <label for="login-password">Mật khẩu</label>
-                    <input id="login-password" type="password" name="password" autocomplete="current-password" maxlength="256" placeholder="Nhập mật khẩu" required>
-                    <button type="submit">Đăng nhập</button>
+                    <label for="patient-login-username">Tài khoản bệnh nhân</label>
+                    <input id="patient-login-username" type="text" name="username" autocomplete="username" maxlength="64" autocapitalize="none" spellcheck="false" placeholder="Nhập tài khoản bệnh nhân" required>
+                    <label for="patient-login-password">Mật khẩu</label>
+                    <input id="patient-login-password" type="password" name="password" autocomplete="current-password" maxlength="256" placeholder="Nhập mật khẩu" required>
+                    <button type="submit">Vào phòng tập</button>
+                </form>
+            </div>
+
+            <div id="doctor-login-panel" class="form-panel" role="tabpanel" aria-labelledby="doctor-login-tab" hidden>
+                <form action="/login/doctor" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label for="doctor-login-username">Tài khoản bác sĩ</label>
+                    <input id="doctor-login-username" type="text" name="username" autocomplete="username" maxlength="64" autocapitalize="none" spellcheck="false" placeholder="Nhập tài khoản bác sĩ" required>
+                    <label for="doctor-login-password">Mật khẩu</label>
+                    <input id="doctor-login-password" type="password" name="password" autocomplete="current-password" maxlength="256" placeholder="Nhập mật khẩu" required>
+                    <button type="submit">Vào cổng bác sĩ</button>
                 </form>
             </div>
 
@@ -120,7 +140,10 @@
                 t.tabIndex = t === el ? 0 : -1;
             });
         }
-        document.querySelector('.tabs').addEventListener('keydown', event => {
+        const tabList = document.querySelector('.tabs');
+        const initialTab = document.querySelector(`[data-portal="${tabList.dataset.initialPortal}"]`);
+        if (initialTab) switchTab(initialTab.getAttribute('aria-controls'), initialTab);
+        tabList.addEventListener('keydown', event => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault();
             const tabs = [...document.querySelectorAll('.tab')];

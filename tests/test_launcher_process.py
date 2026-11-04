@@ -40,7 +40,7 @@ class LauncherProcessTests(unittest.TestCase):
                         try:
                             with opener.open(f"http://127.0.0.1:{port}/health", timeout=1) as response:
                                 result = json.load(response)
-                            self.assertEqual(result, {"status": "ok", "app": "KneeROM"})
+                            self.assertEqual((result["status"], result["app"]), ("ok", "KneeROM"))
                             break
                         except (OSError, URLError):
                             time.sleep(0.15)

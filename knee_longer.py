@@ -10,6 +10,23 @@
 
 import os
 import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(os.getenv('KNEEROM_PROJECT_ROOT', str(ROOT)))
+packages = PROJECT_ROOT / '.venv' / 'Lib' / 'site-packages'
+if packages.is_dir():
+    sys.path.insert(0, str(packages))
+sys.path.insert(0, str(ROOT))
+
+try:
+    import tkinter as tk
+except ModuleNotFoundError:
+    if __name__ == '__main__':
+        from desktop_runtime import relaunch
+        raise SystemExit(relaunch(Path(__file__).resolve()))
+    raise
+
 import time
 import queue
 import ctypes
@@ -21,7 +38,6 @@ from serial.tools import list_ports
 
 from knee_core import BAUD, OUT, TARGET, SerialLines, default_report_path, export_excel, parse_knee_line, preferred_serial_ports, serial_connection_error
 
-import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkinter import font as tkfont
 
@@ -32,6 +48,9 @@ from matplotlib.patches import Polygon
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 DEFAULT_PORT = "COM6"
+from ble_transport import BleStream
+BLE_LABEL = 'BLE · KneeROM_7C0A7C'
+BLE_PORT = 'ble://KneeROM_7C0A7C'
 
 # ---------- Bang mau (Meaxtio - warm cream + lavender) ----------
 BG = "#f5efe6"          # nen kem am
@@ -169,6 +188,8 @@ class KneeApp:
                                   relief="flat", font=("Segoe UI", 10, "bold"),
                                   padx=22, pady=5, cursor="hand2")
         self.btn_conn.pack(side="left", padx=12)
+        tk.Label(connbar, text="Bật Bluetooth · Giữ Wi-Fi Internet · Dùng web hoặc ứng dụng để nhận cảm biến",
+                 bg=CARD, fg=MUTED, font=("Segoe UI", 8)).pack(side="left", padx=4)
 
         # ===== Than chinh =====
         main = tk.Frame(self.root, bg=BG)
@@ -288,8 +309,9 @@ class KneeApp:
     # ---------------- Cong / ket noi ----------------
     def _scan_ports(self):
         ports = preferred_serial_ports(list_ports.comports())
-        items = [f"{port.device}  ({port.description})" for port in ports]
-        self._port_map = {label: port.device for label, port in zip(items, ports)}
+        serial_items = [f"{port.device}  ({port.description})" for port in ports]
+        items = [BLE_LABEL, *serial_items]
+        self._port_map = {BLE_LABEL: BLE_PORT, **{label: port.device for label, port in zip(serial_items, ports)}}
         self.port_cb["values"] = items
         if not items:
             self.port_var.set("")
@@ -314,9 +336,13 @@ class KneeApp:
             messagebox.showerror("Chưa thấy thiết bị", "Không tìm thấy cổng serial. Cắm USB rồi bấm Quét.")
             return
         try:
-            connection = serial.Serial(port, BAUD, timeout=0.05, write_timeout=0.5)
+            if port.startswith('ble://'):
+                connection = BleStream(name=port.removeprefix('ble://'), timeout=0.1)
+            else:
+                connection = serial.Serial(port, BAUD, timeout=0.05, write_timeout=0.5)
         except (serial.SerialException, OSError) as exc:
-            messagebox.showerror("Lỗi kết nối", serial_connection_error(port, exc))
+            message = str(exc) if port.startswith('ble://') else serial_connection_error(port, exc)
+            messagebox.showerror("Lỗi kết nối", message)
             return
         self.ser = connection
         # Each connection owns its stop event and queue. Old workers cannot read
@@ -344,7 +370,7 @@ class KneeApp:
             messagebox.showerror("Lỗi kết nối", f"Không khởi động được luồng đọc {port}: {exc}")
             return
         self.btn_conn.config(text="Ngắt kết nối", bg=BAD, activebackground="#b83a44")
-        self.hdr_status.config(text=f"●  ĐÃ KẾT NỐI · {port}", fg="#8ff0b0")
+        self.hdr_status.config(text=("●  BLE: ĐANG TÌM S3" if port.startswith("ble://") else f"●  ĐÃ KẾT NỐI · {port}"), fg="#8ff0b0")
         self.btn_calib.config(state="normal")
         self.btn_rec.config(state="normal")
         self.port_cb.config(state="disabled")
@@ -520,6 +546,7 @@ class KneeApp:
             if kind == "log":
                 self._on_log(payload)
             elif kind == "flex":
+                self.hdr_status.config(text="●  ĐÃ KẾT NỐI", fg="#8ff0b0")
                 self._on_flex(*payload)
                 changed = True
             elif kind == "disconnected" and self.ser is not None:

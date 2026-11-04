@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BME Rehab - Phòng tập phục hồi chức năng</title>
+    <title>KneeROM - Phòng tập phục hồi chức năng</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -34,6 +34,19 @@
         .step.active { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 8px 16px rgba(14,130,253,.28); }
         .step.done { background: #E3F9EC; color: var(--green); border-color: #BBF0CF; }
 
+        .measurement-panels { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:20px; }
+        .measurement-panels > div { min-width:0; }
+        .measurement-guide { color:var(--muted); font-size:13px; }
+        .quality-status { border:1px solid #FDE68A; background:#FFFBEB; color:#92400E; padding:10px 12px; border-radius:10px; font-size:13px; }
+        .quality-status[data-ready="true"] { border-color:#A7F3D0; background:#ECFDF5; color:#065F46; }
+        .measurement-panels .leg-controls { flex-wrap:wrap; }
+        .measurement-panels #usbBox, .measurement-panels #wifiBox, .measurement-panels #bleBox, .measurement-panels .cal-buttons { flex-wrap:wrap; }
+        .measurement-panels #portSelect { min-width:90px; }
+        .measurement-panels .live-row { flex-wrap:wrap; gap:8px; font-size:15px; }
+        @media(max-width:1200px) { .measurement-panels { grid-template-columns:1fr; } }
+        @media(max-width:560px) { .compare-box { flex-direction:column; } }
+        .connection-visible { display: flex; }
+        .connection-hidden { display: none; }
         .cal-buttons { display: flex; gap: 8px; margin-top: 10px; }
         .cal-buttons button { flex: 1; padding: 12px; border: none; border-radius: 11px; font-weight: 600; cursor: pointer; color: #fff; font-family: inherit; }
         .live-row { display: flex; justify-content: space-around; font-size: 18px; margin: 16px 0; }
@@ -57,29 +70,48 @@
     </style>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui-v2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='patient-portal.css', v='no-game-20261104') }}">
     <script src="{{ url_for('static', filename='rehab.js') }}"></script>
 </head>
-<body>
+<body class="page-dashboard patient-portal-page">
     <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
-    <div class="topbar"><span>🦴</span> BME Rehab · Phục hồi khớp gối</div>
-    <div class="grid-layout">
+    {% set patient_active = 'dashboard' %}
+    {% set patient_display = name %}
+    <div class="patient-shell">
+        {% include '_patient_nav.html' %}
+        <main class="patient-main">
+            <div class="patient-content">
+                <header class="patient-topbar">
+                    <div><h1>Phòng tập của tôi</h1><p>Đo, tập luyện và theo dõi tiến triển trong một nơi.</p></div>
+                    <div class="patient-topbar-user"><span class="patient-avatar">{{ name[0] | upper }}</span><div><b>{{ name }}</b><small>Tuần phục hồi {{ week }}</small></div></div>
+                </header>
+                <section class="patient-hero">
+                    <small>Kế hoạch hôm nay</small>
+                    <h2>THeo dõi tiến trình.</h2>
+                    <p>Đo camera và cảm biến cùng lúc trong một lượt tập.</p>
+                    <div class="patient-hero-metrics"><span>Tuần {{ week }}</span><span>Mục tiêu {{ target }}</span><span>{{ phase }}</span></div>
+                </section>
+                <div class="grid-layout">
         <div>
             <div class="card">
-                <h2 style="margin-top:0; color:var(--primary);">🦵 Quy trình đo góc gập gối</h2>
+                <span class="section-kicker">Phòng tập trực tiếp</span>
+                <h2 style="margin-top:0; color:var(--primary);">Đo camera + cảm biến cùng lúc</h2>
 
                 <div id="calibBanner" style="display:none; background:#FFF4E5; color:#C2410C; padding:14px; border-radius:12px; text-align:center; font-weight:600; margin-bottom:15px; font-size:15px; border:1px solid #FFE0B2;">
                     ⏳ ĐANG XÁC ĐỊNH BIAS — GIỮ YÊN CHÂN, ĐỪNG ĐỘNG (vừa bấm nút EN trên ESP32)
                 </div>
 
-                <div class="stepper">
-                    <div class="step active" id="ind1">① Đo Camera</div>
-                    <div class="step" id="ind2">② Đo Cảm biến</div>
-                    <div class="step" id="ind3">③ So sánh</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                    <button type="button" class="legbtn" id="startMeasurement" onclick="startMeasurement(this)">▶ Bắt đầu đo</button>
+                    <button type="button" class="legbtn" id="stopMeasurement" onclick="stopMeasurement(this)" disabled>■ Dừng đo</button>
+                    <span id="measurementStatus" role="status" style="color:var(--muted);align-self:center;">Thiết bị chưa được giữ cho lượt đo.</span>
                 </div>
-
+                <p class="measurement-guide">Đặt camera ngang người, thấy đủ hông–gối–cổ chân; đeo IMU ở đùi và cẳng chân. Bấm Bắt đầu đo, chờ hai nguồn sẵn sàng rồi gập–duỗi. Chỉ lưu khi cả hai nguồn có tín hiệu.</p>
+                <div class="measurement-panels">
                 <!-- ===== BƯỚC 1: CAMERA ===== -->
                 <div id="step1">
-                    <p style="color:var(--muted);">Bước 1: Đứng/ngồi trước camera và thực hiện gập–duỗi gối. Hệ thống ghi lại góc lớn nhất bằng MediaPipe.</p>
+                    <p style="color:var(--muted);">Camera · Kiểm tra hình trước khi ghi góc.</p>
                     <div class="leg-controls" style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
                         <span style="color:var(--muted); font-size:14px;">🦵 Đo chân:</span>
                         <button onclick="setLeg('left', this)" class="legbtn" id="legBtn-left">Chân trái</button>
@@ -89,29 +121,34 @@
                     <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
                         <button onclick="toggleCrowd(this)" class="legbtn" id="crowdBtn" style="font-size:13px;">👥 Chế độ đông người</button>
                     </div>
-                    <img id="cameraFeed" class="video-box" alt="Hình ảnh camera theo dõi chuyển động chân"><p id="cameraStatus" role="status" style="color:var(--muted);font-size:13px;">Đang kết nối camera…</p>
+                    <p id="cameraQuality" class="quality-status" role="status" aria-live="polite">Chờ hình đủ rõ để ghi góc.</p>
+                    <img id="cameraFeed" class="video-box" alt="Hình ảnh camera theo dõi chuyển động chân"><p id="cameraStatus" role="status" style="color:var(--muted);font-size:13px;">Mở Camo Studio và ghép điện thoại, sau đó bấm Bắt đầu đo.</p>
                     <div class="live-row">
                         <div>Góc hiện tại: <b id="liveAngle" style="color:var(--primary);">0°</b></div>
                         <div>Lớn nhất: <b id="maxRomSession" style="color:var(--amber);">0°</b></div>
                     </div>
-                    <button class="btn btn-success" onclick="finishCamera(this)">✓ Hoàn tất đo Camera → chuyển sang Cảm biến</button>
                 </div>
 
                 <!-- ===== BƯỚC 2: CẢM BIẾN IMU ===== -->
-                <div id="step2" style="display:none;">
-                    <p style="color:var(--muted);">Bước 2: Đeo cảm biến vào đùi và cẳng chân. Bấm <b>① Duỗi thẳng</b> rồi <b>② Trục gập</b>, sau đó tập gập–duỗi.</p>
-                    <!-- Chọn kiểu kết nối: USB hoặc WiFi (đổi được lúc đang chạy) -->
+                <div id="step2">
+                    <p style="color:var(--muted);">Cảm biến IMU · Hiệu chỉnh trước khi tập. Camera và IMU được đọc song song.</p>
+                    <!-- Chọn kiểu kết nối: BLE (mặc định), USB hoặc WiFi cũ -->
                     <div style="display:flex; gap:8px; margin-bottom:10px;">
-                        <button onclick="setImuMode('serial', this)" class="legbtn {{ '' if imu_mode == 'wifi' else 'legbtn-active' }}" id="modeBtn-serial" style="flex:1;">🔌 USB (dây)</button>
-                        <button onclick="setImuMode('wifi', this)" class="legbtn {{ 'legbtn-active' if imu_mode == 'wifi' else '' }}" id="modeBtn-wifi" style="flex:1;">🛜 WiFi (không dây)</button>
+                        <button onclick="setImuMode('ble', this)" class="legbtn {{ 'legbtn-active' if imu_mode == 'ble' else '' }}" id="modeBtn-ble" style="flex:1;">Bluetooth BLE</button>
+                        <button onclick="setImuMode('serial', this)" class="legbtn {{ 'legbtn-active' if imu_mode == 'serial' else '' }}" id="modeBtn-serial" style="flex:1;">🔌 USB (dây)</button>
+                        <button onclick="setImuMode('wifi', this)" class="legbtn {{ 'legbtn-active' if imu_mode == 'wifi' else '' }}" id="modeBtn-wifi" style="flex:1;">Wi-Fi cũ</button>
                     </div>
-                    <div id="usbBox" style="display:{{ 'none' if imu_mode == 'wifi' else 'flex' }}; gap:8px; align-items:center; margin-bottom:12px;">
+                    <div id="usbBox" class="{{ 'connection-visible' if imu_mode == 'serial' else 'connection-hidden' }}" style=" gap:8px; align-items:center; margin-bottom:12px;">
                         <label for="portSelect" style="color:var(--muted); font-size:13px; white-space:nowrap;">🔌 Cổng:</label>
                         <select id="portSelect" style="flex:1; padding:10px; border-radius:10px; background:#fff; color:var(--ink); border:1.5px solid var(--line); font-family:inherit;"></select>
                         <button onclick="connectPort(this)" style="background:var(--primary); color:#fff; border:none; padding:9px 15px; border-radius:10px; cursor:pointer; font-weight:600; font-family:inherit;">Kết nối</button>
                         <button onclick="loadPorts(this)" style="background:var(--soft); color:var(--ink); border:1px solid var(--line); padding:9px 13px; border-radius:10px; cursor:pointer;" title="Làm mới danh sách cổng">↻</button>
                     </div>
-                    <div id="wifiBox" style="display:{{ 'flex' if imu_mode == 'wifi' else 'none' }}; gap:8px; align-items:center; margin-bottom:12px; background:#EAF3FF; padding:12px; border-radius:12px; border:1px solid var(--line);">
+                    <div id="bleBox" class="{{ 'connection-visible' if imu_mode == 'ble' else 'connection-hidden' }}" style="gap:8px; align-items:center; margin-bottom:12px; background:var(--soft); padding:12px; border-radius:12px;">
+                        <span style="flex:1;">Bật Bluetooth trên laptop chạy KneeROM và cấp nguồn S3 <b>KneeROM_7C0A7C</b>. Giữ Wi-Fi Internet như bình thường. Bấm Bắt đầu đo để nhận cảm biến.</span>
+                        <button type="button" class="legbtn" onclick="reconnectImu(this)">Kết nối lại</button>
+                    </div>
+                    <div id="wifiBox" class="{{ 'connection-visible' if imu_mode == 'wifi' else 'connection-hidden' }}" style=" gap:8px; align-items:center; margin-bottom:12px; background:#EAF3FF; padding:12px; border-radius:12px; border:1px solid var(--line);">
                         <span style="color:var(--primary); font-weight:700;">🛜 WiFi:</span>
                         <span style="flex:1; color:var(--muted);">Nối máy tính vào WiFi <b style="color:var(--ink);">ACL_Knee</b> (mật khẩu <b style="color:var(--ink);">12345678</b>)</span>
                         <button onclick="reconnectImu(this)" style="background:var(--primary); color:#fff; border:none; padding:9px 15px; border-radius:10px; cursor:pointer; font-weight:600; font-family:inherit;">Kết nối lại</button>
@@ -122,14 +159,17 @@
                     <p id="stability" style="text-align:center; font-weight:600; margin:12px 0;">—</p>
                     <div class="cal-buttons">
                         <button onclick="imuCmd('C', this)" style="background:var(--primary);">① Calib - Duỗi thẳng (C)</button>
+                        <button onclick="imuCmd('F', this)" style="background:var(--primary);">Hiệu chuẩn trục (F) · Gập-duỗi 6 giây</button>
                         <button onclick="imuCmd('L', this)" style="background:var(--green);">② Bắt đầu ghi gập (L)</button>
                     </div>
-                    <button class="btn btn-success" onclick="finishSensor(this)">✓ Lưu kết quả Cảm biến → Xem so sánh</button>
                 </div>
 
+                </div>
+                <button id="finishCombined" type="button" class="btn btn-success" onclick="finishCombined(this)" disabled>Hoàn tất · Lưu camera + IMU và ảnh</button>
+                <p id="combinedHint" class="measurement-guide" role="status">Bấm Bắt đầu đo để kết nối cả hai nguồn.</p>
                 <!-- ===== BƯỚC 3: SO SÁNH ===== -->
                 <div id="step3" style="display:none;">
-                    <h3 style="color:var(--primary);">Kết quả 2 phương pháp đo</h3>
+                    <h3 style="color:var(--primary);">Kết quả trong cùng lượt đo</h3>
                     <div class="compare-box">
                         <div class="compare-item">
                             <div style="color:var(--muted);">📷 Camera</div>
@@ -145,7 +185,12 @@
                         </div>
                     </div>
                     <p id="resVerdict" style="text-align:center; font-weight:700; margin:8px 0;">—</p>
-                    <p style="color:var(--muted); text-align:center;">Cả hai kết quả đã được lưu vào hồ sơ để bác sĩ đối chiếu.</p>
+                    <p style="color:var(--muted); text-align:center;">Đã lưu hai ROM lớn nhất của cùng lượt đo. Hai cực đại có thể xuất hiện ở hai thời điểm khác nhau.</p>
+                    <figure id="captureResult" hidden style="margin:16px 0;">
+                        <img id="captureImage" alt="Ảnh tại ROM camera lớn nhất" style="width:100%;max-height:420px;object-fit:contain;border-radius:12px;">
+                        <figcaption id="captureCaption"></figcaption>
+                        <a href="/care">Xem ảnh và phản hồi của bác sĩ</a>
+                    </figure>
                     <button class="btn btn-profile" onclick="restart(this)">↻ Đo lại từ đầu</button>
                 </div>
             </div>
@@ -177,7 +222,7 @@
                                     <td>{{ row[1] }}</td>
                                     <td style="text-align: center; color: var(--green); font-weight: bold;">{{ row[0] }}°</td>
                                     <td style="text-align: center; color: var(--muted);">{{ '🦵 Cảm biến' if row[2] == 'imu' else '📷 Camera' }}</td>
-                                    <td style="text-align: center;"><button onclick="deleteMeasurement({{ row[3] }}, this)" style="background:none; border:none; cursor:pointer; font-size:16px;" title="Xóa lượt đo này">🗑️</button></td>
+                                    <td style="text-align: center;"><button data-measurement-id="{{ row[3] }}" onclick="deleteMeasurement(this.dataset.measurementId, this)" style="background:none; border:none; cursor:pointer; font-size:16px;" title="Xóa lượt đo này">🗑️</button></td>
                                 </tr>
                                 {% endfor %}
                             {% else %}
@@ -192,15 +237,14 @@
         </div>
 
         <div style="display:flex; flex-direction:column; gap:24px;">
-            <div class="card">
-                <h3 style="margin-top:0; color:var(--primary);">👤 Thông tin bệnh nhân</h3>
-                <p>Họ tên: <b>{{ name }}</b> | Tuổi: <b>{{ age }} tuổi</b></p>
-                <p>Tiến trình: <span class="pill">Tuần {{ week }}</span></p>
-                <hr style="border:none; border-top:1px solid var(--line);">
+            <div class="card patient-summary">
+                <span class="section-kicker">Kế hoạch cá nhân</span>
+                <h3 class="patient-name">{{ name }}</h3>
+                <div class="patient-meta">{{ age }} tuổi · Tuần phục hồi {{ week }}</div>
+                <div class="target-card"><small>Biên độ mục tiêu</small><strong>{{ target }}</strong></div>
                 <p>Giai đoạn: <b style="color:var(--primary);">{{ phase }}</b></p>
-                <p>Biên độ mục tiêu: <b style="color:var(--green);">{{ target }}</b></p>
-                <p>Định hướng điều trị: <i style="color:var(--muted);">{{ recommendation.muc_tieu }}</i></p>
-                <p>Lời khuyên bác sĩ:</p>
+                <p>Định hướng điều trị: <span style="color:var(--muted);">{{ recommendation.muc_tieu }}</span></p>
+                <p><b>Lời khuyên cho buổi tập:</b></p>
                 <ul>
                     {% for advice in recommendation.loi_khuyen %}
                         <li>{{ advice }}</li>
@@ -208,15 +252,17 @@
                 </ul>
             </div>
 
-            <div style="display:flex; gap:12px; flex-wrap:wrap;">
-                <a href="/game" class="btn" style="flex:1; background:linear-gradient(135deg,#F59E0B,#EF6C00); color:#fff;">🎮 GAME</a>
-                <a href="/my_records" class="btn" style="flex:1; background:var(--teal); color:#fff;">📁 HỒ SƠ</a>
-                <a href="/profile" class="btn btn-profile" style="flex:1;">📊 ĐỒ THỊ</a>
-                <a href="/logout" class="btn btn-logout" style="flex:1;">ĐĂNG XUẤT</a>
+            <div class="quick-actions">
+                <a href="/my_records" class="btn" style="flex:1; background:var(--teal); color:#fff;">Hồ sơ</a>
+                <a href="/care" class="btn" style="flex:1; background:linear-gradient(135deg,#7C3AED,#4F46E5); color:#fff;">Ảnh tiến triển</a>
+                <a href="/profile" class="btn btn-profile" style="flex:1;">Tiến trình</a>
             </div>
         </div>
+                </div>
+            </div>
+        </main>
     </div>
 
-    <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='dashboard.js', v='ble-combined-20261104') }}" defer></script>
 </body>
 </html>

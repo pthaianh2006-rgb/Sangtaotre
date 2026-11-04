@@ -7,11 +7,18 @@ numpy==2.5.0
 # opencv-contrib-python (superset of opencv-python) is what mediapipe requires;
 # avoid also installing opencv-python or the two cv2 builds conflict.
 opencv-contrib-python==4.13.0.92
-# The camera pipeline uses the legacy mp.solutions.pose API. Do not upgrade
-# MediaPipe independently without migrating that pipeline and validating angles.
+# PoseLandmarker Tasks API in VIDEO mode, with the Full .task model.
+# Keep this tested version pinned; optional LiteRT-LM is isolated in ai_runtime.
 mediapipe==0.10.14
 pyserial==3.5
 
 # Tkinter live plot and Word report generation (tien_ich/gen_report.py)
 matplotlib==3.11.0
 python-docx==1.2.0
+psycopg[binary]==3.3.6
+
+# Select the Camo virtual camera by its device name, not a shifting index.
+cv2-enumerate-cameras==1.3.2
+
+# BLE UART receiver for ESP32-S3
+bleak==3.0.2

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KneeROM - Theo dõi phục hồi cùng bác sĩ</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui-v2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='patient-portal.css', v='no-game-20261104') }}">
+    <script src="{{ url_for('static', filename='rehab.js') }}"></script>
+    <style>
+        :root { --care-blue:#0f766e; --care-purple:#0f766e; --care-cyan:#14b8a6; --care-ink:#17233b; --care-muted:#6b7c8f; --care-line:#dceae7; --care-bg:#f3f8f7; --care-card:#fff; --care-green:#16a34a; --care-red:#ef4444; }
+        * { box-sizing:border-box; }
+        body { margin:0; background:var(--care-bg); color:var(--care-ink); font-family:'Poppins','Segoe UI',sans-serif; }
+        .care-shell { min-height:100vh; display:grid; grid-template-columns:250px minmax(0,1fr); }
+        .care-sidebar { position:sticky; top:0; height:100vh; padding:28px 20px; color:#fff; background:linear-gradient(165deg,#4035a7 0%,#6249ed 58%,#319cf0 130%); display:flex; flex-direction:column; }
+        .care-brand { display:flex; align-items:center; gap:12px; color:#fff; text-decoration:none; font-weight:800; font-size:20px; }
+        .care-brand-mark { width:44px; height:44px; border-radius:14px; display:grid; place-items:center; color:#4539b5; background:#fff; }
+        .care-role { margin:4px 0 34px 56px; opacity:.72; text-transform:uppercase; letter-spacing:.12em; font-size:10px; font-weight:700; }
+        .care-nav { display:grid; gap:8px; }
+        .care-nav a { color:rgba(255,255,255,.8); text-decoration:none; border-radius:14px; padding:13px 14px; font-size:13px; font-weight:600; }
+        .care-nav a.active,.care-nav a:hover { background:rgba(255,255,255,.16); color:#fff; }
+        .care-sidebar-bottom { margin-top:auto; display:grid; gap:8px; }
+        .care-main { min-width:0; padding:30px clamp(20px,4vw,58px) 55px; }
+        .care-topbar { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:24px; }
+        .care-topbar h1 { margin:0; font-size:clamp(24px,3vw,36px); line-height:1.2; }
+        .care-topbar p { margin:7px 0 0; color:var(--care-muted); font-size:13px; }
+        .care-user { display:flex; align-items:center; gap:10px; background:#fff; border:1px solid var(--care-line); border-radius:16px; padding:9px 13px; box-shadow:0 8px 28px rgba(47,72,124,.06); }
+        .care-avatar { width:40px; height:40px; border-radius:13px; display:grid; place-items:center; color:#fff; font-weight:800; background:linear-gradient(135deg,var(--care-purple),var(--care-cyan)); }
+        .care-hero { position:relative; overflow:hidden; color:#fff; padding:30px 34px; border-radius:24px; background:linear-gradient(120deg,#6747ed,#357ff0); box-shadow:0 18px 40px rgba(85,70,225,.2); }
+        .care-hero::after { content:""; position:absolute; width:230px; height:230px; border-radius:50%; background:rgba(255,255,255,.1); right:-70px; top:-115px; }
+        .care-hero small { font-weight:800; letter-spacing:.12em; }
+        .care-hero h2 { position:relative; z-index:1; max-width:760px; margin:10px 0 8px; font-size:clamp(24px,3.2vw,40px); line-height:1.18; }
+        .care-hero p { position:relative; z-index:1; max-width:720px; margin:0; opacity:.88; line-height:1.65; }
+        .care-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:15px; margin:18px 0; }
+        .care-stat { position:relative; overflow:hidden; background:#fff; border:1px solid var(--care-line); border-radius:18px; padding:20px; }
+        .care-stat label { display:block; color:var(--care-muted); text-transform:uppercase; letter-spacing:.07em; font-size:10px; font-weight:700; }
+        .care-stat strong { display:block; margin-top:7px; font-size:26px; color:var(--care-purple); }
+        .care-layout { display:grid; grid-template-columns:minmax(300px,.8fr) minmax(0,1.3fr); gap:18px; align-items:start; }
+        .care-card { background:var(--care-card); border:1px solid var(--care-line); border-radius:20px; padding:22px; box-shadow:0 10px 32px rgba(44,66,112,.05); }
+        .care-card h3 { margin:0 0 5px; font-size:18px; }
+        .care-card-sub { margin:0 0 18px; color:var(--care-muted); font-size:12px; }
+        .care-alert { margin-bottom:16px; padding:12px 15px; border-radius:12px; font-size:13px; font-weight:600; }
+        .care-alert.ok { color:#087443; background:#eafbf3; border:1px solid #bcefd5; }
+        .care-alert.error { color:#b42318; background:#fff1f0; border:1px solid #fecaca; }
+        .care-field { display:grid; gap:7px; margin-bottom:14px; }
+        .care-field label { font-size:12px; font-weight:700; }
+        .care-field input,.care-field select,.care-field textarea { width:100%; border:1.5px solid var(--care-line); border-radius:12px; padding:12px 13px; font:inherit; font-size:13px; color:var(--care-ink); background:#fbfcff; }
+        .care-field textarea { min-height:96px; resize:vertical; }
+        .care-field input:focus,.care-field select:focus,.care-field textarea:focus { outline:none; border-color:var(--care-purple); box-shadow:0 0 0 4px rgba(109,74,255,.09); }
+        .care-upload { position:relative; border:1.5px dashed #b9c4d9; border-radius:15px; padding:20px; text-align:center; background:#f8faff; cursor:pointer; }
+        .care-upload input { position:absolute; inset:0; width:100%; opacity:0; cursor:pointer; }
+        .care-upload strong { display:block; color:var(--care-purple); }
+        .care-upload span { color:var(--care-muted); font-size:11px; }
+        #imagePreview { display:none; width:100%; max-height:230px; object-fit:cover; border-radius:12px; margin-top:12px; }
+        .care-submit { width:100%; border:0; border-radius:13px; padding:13px 16px; color:#fff; font:inherit; font-weight:700; cursor:pointer; background:linear-gradient(120deg,var(--care-purple),var(--care-blue)); box-shadow:0 10px 22px rgba(73,80,220,.22); }
+        .care-submit:hover { transform:translateY(-1px); }
+        .care-compare { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
+        .care-compare figure { margin:0; border:1px solid var(--care-line); border-radius:16px; overflow:hidden; background:#f7f9fd; }
+        .care-compare img { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; }
+        .care-compare figcaption { padding:11px 13px; font-size:11px; color:var(--care-muted); }
+        .care-timeline { position:relative; display:grid; gap:14px; }
+        .care-entry { display:grid; grid-template-columns:190px minmax(0,1fr); gap:16px; padding:14px; border:1px solid var(--care-line); border-radius:17px; background:#fff; }
+        .care-entry img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:12px; background:#eef2f8; }
+        .care-entry-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+        .care-entry-head strong { font-size:14px; }
+        .care-date { color:var(--care-muted); font-size:11px; }
+        .care-tags { display:flex; flex-wrap:wrap; gap:7px; margin:10px 0; }
+        .care-tag { border-radius:999px; padding:5px 9px; font-size:10px; font-weight:700; background:#eef2ff; color:#4f46e5; }
+        .care-tag.pain { background:#fff1f2; color:#e11d48; }
+        .care-note { margin:8px 0; color:#4b5875; font-size:13px; line-height:1.55; white-space:pre-wrap; }
+        .care-reply { margin-top:12px; border-left:3px solid var(--care-green); border-radius:0 12px 12px 0; padding:11px 13px; background:#effcf5; }
+        .care-reply b { display:block; color:#087443; font-size:11px; margin-bottom:3px; }
+        .care-reply p { margin:0; font-size:12px; line-height:1.55; white-space:pre-wrap; }
+        .care-empty { text-align:center; padding:36px 16px; color:var(--care-muted); border:1px dashed #cbd5e1; border-radius:16px; }
+        .care-mobile-nav { display:none; }
+        @media (max-width:980px) { .care-shell{grid-template-columns:86px minmax(0,1fr)} .care-sidebar{padding:22px 12px} .care-brand span:last-child,.care-role,.care-nav a span:last-child,.care-sidebar-bottom a span:last-child{display:none} .care-brand{justify-content:center} .care-nav a{text-align:center;padding:12px 8px} }
+        @media (max-width:760px) { .care-shell{display:block} .care-sidebar{position:static;width:auto;height:auto;padding:12px 16px;display:flex;flex-direction:row;align-items:center;gap:12px} .care-brand-mark{width:38px;height:38px;border-radius:11px} .care-brand span:last-child{display:inline} .care-role,.care-nav,.care-sidebar-bottom{display:none} .care-main{padding:20px 16px 90px} .care-user{display:none} .care-stats{grid-template-columns:1fr} .care-layout{grid-template-columns:1fr} .care-mobile-nav{position:fixed;z-index:20;left:12px;right:12px;bottom:12px;display:flex;justify-content:space-around;background:#fff;border:1px solid var(--care-line);border-radius:16px;padding:10px;box-shadow:0 14px 35px rgba(25,39,77,.18)} .care-mobile-nav a{color:#52617f;text-decoration:none;font-size:11px;font-weight:700} }
+        @media (max-width:560px) { .care-topbar{align-items:flex-start} .care-hero{padding:25px 22px} .care-compare{grid-template-columns:1fr} .care-entry{grid-template-columns:1fr} .care-entry img{max-height:280px} }
+    </style>
+</head>
+<body class="patient-portal-page">
+    {% set patient_active = 'care' %}
+    {% set patient_display = patient[1] %}
+    <div class="patient-shell">
+        {% include '_patient_nav.html' %}
+        <main class="patient-main care-main">
+          <div class="patient-content">
+            <header class="care-topbar">
+                <div><h1>Theo dõi cùng bác sĩ</h1><p>Lưu lại hình ảnh và tình trạng chân qua từng lần phục hồi.</p></div>
+                <div class="care-user"><span class="care-avatar">{{ patient[1][0] | upper }}</span><div><b>{{ patient[1] }}</b><br><small>Tuần {{ patient[3] or 0 }}</small></div></div>
+            </header>
+
+            <section class="care-hero">
+                <small>KNEEROM SHARED CARE</small>
+                <h2>Mỗi ảnh là một mốc giúp bác sĩ đánh giá tiến triển chính xác hơn.</h2>
+                <p>Chụp cùng góc nhìn, đủ sáng và giữ khoảng cách tương tự giữa các lần để dễ so sánh.</p>
+            </section>
+
+            <section class="care-stats">
+                <div class="care-stat"><label>Ảnh đã gửi</label><strong>{{ updates|length }}</strong></div>
+                <div class="care-stat"><label>Lượt đo ROM</label><strong>{{ measurement_count }}</strong></div>
+                <div class="care-stat"><label>ROM tốt nhất</label><strong>{{ '%.1f°'|format(best_rom) if best_rom is not none else '—' }}</strong></div>
+            </section>
+
+            <div class="care-layout">
+                <section class="care-card">
+                    <h3>Cập nhật tình trạng hôm nay</h3>
+                    <p class="care-card-sub">Ảnh và ghi chú sẽ được gửi vào đúng hồ sơ bác sĩ đang theo dõi.</p>
+                    {% if care_message %}<div class="care-alert ok" role="status">{{ care_message }}</div>{% endif %}
+                    {% if care_error %}<div class="care-alert error" role="alert">{{ care_error }}</div>{% endif %}
+                    <form action="/care/upload" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="care-field">
+                            <label>Ảnh chân hiện tại</label>
+                            <label class="care-upload" for="careImage">
+                                <input id="careImage" type="file" name="image" accept="image/jpeg,image/png,image/webp" capture="environment" required>
+                                <strong>Chụp ảnh hoặc chọn từ máy</strong>
+                                <span id="fileName">JPG, PNG, WebP · tối đa 5 MB</span>
+                                <img id="imagePreview" alt="Xem trước ảnh chân">
+                            </label>
+                        </div>
+                        <div class="care-field"><label for="limbSide">Bên chân</label><select id="limbSide" name="limb_side"><option value="right">Chân phải</option><option value="left">Chân trái</option><option value="both">Cả hai chân</option></select></div>
+                        <div class="care-field"><label for="painLevel">Mức đau hiện tại (0–10)</label><input id="painLevel" type="number" name="pain_level" min="0" max="10" value="0" required></div>
+                        <div class="care-field"><label for="careNote">Ghi chú tình trạng</label><textarea id="careNote" name="note" maxlength="1000" placeholder="Ví dụ: còn sưng nhẹ sau khi tập, đi lại đỡ đau hơn hôm qua..."></textarea></div>
+                        <button class="care-submit" type="submit">Gửi cập nhật cho bác sĩ</button>
+                    </form>
+                </section>
+
+                <section class="care-card">
+                    <h3>Tiến triển bằng hình ảnh</h3>
+                    <p class="care-card-sub">So sánh mốc đầu tiên với ảnh gần nhất và xem phản hồi theo từng lần.</p>
+                    {% if updates %}
+                        <div class="care-compare">
+                            <figure><img src="{{ url_for('care_image', update_id=updates[-1][0]) }}" alt="Ảnh mốc đầu tiên"><figcaption>Mốc đầu tiên · {{ updates[-1][5] }}</figcaption></figure>
+                            <figure><img src="{{ url_for('care_image', update_id=updates[0][0]) }}" alt="Ảnh cập nhật gần nhất"><figcaption>Gần nhất · {{ updates[0][5] }}</figcaption></figure>
+                        </div>
+                        <div class="care-timeline">
+                            {% for item in updates %}
+                            <article class="care-entry">
+                                <img src="{{ url_for('care_image', update_id=item[0]) }}" alt="Ảnh tiến triển ngày {{ item[5] }}" loading="lazy">
+                                <div>
+                                    <div class="care-entry-head"><strong>Cập nhật #{{ updates|length - loop.index0 }}</strong><span class="care-date">{{ item[5] }}</span></div>
+                                    <div class="care-tags"><span class="care-tag">{{ {'left':'Chân trái','right':'Chân phải','both':'Cả hai chân'}[item[4]] }}</span>{% if item[3] is not none %}<span class="care-tag pain">Đau {{ item[3] }}/10</span>{% else %}<span class="care-tag">Ảnh từ camera đo ROM</span>{% endif %}</div>
+                                    <p class="care-note">{{ item[2] or 'Không có ghi chú.' }}</p>
+                                    {% if item[6] %}<div class="care-reply"><b>{{ item[8] or 'Bác sĩ' }} phản hồi · {{ item[7] }}</b><p>{{ item[6] }}</p></div>{% endif %}
+                                </div>
+                            </article>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="care-empty"><b>Chưa có ảnh tiến triển</b><br>Hãy gửi ảnh đầu tiên để tạo mốc theo dõi cùng bác sĩ.</div>
+                    {% endif %}
+                </section>
+            </div>
+          </div>
+        </main>
+    </div>
+    <script>
+        const imageInput = document.getElementById('careImage');
+        const preview = document.getElementById('imagePreview');
+        const fileName = document.getElementById('fileName');
+        imageInput.addEventListener('change', () => {
+            const file = imageInput.files[0];
+            if (!file) return;
+            fileName.textContent = file.name;
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+        });
+    </script>
+</body>
+</html>

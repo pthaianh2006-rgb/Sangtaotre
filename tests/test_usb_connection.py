@@ -24,11 +24,12 @@ class UsbConnectionTests(unittest.TestCase):
         return [SimpleNamespace(device="COM3", description="Intel AMT SOL", vid=None, hwid="PCI"),
                 SimpleNamespace(device="COM8", description="USB-SERIAL CH340", vid=0x1a86, hwid="USB")]
 
-    def test_usb_is_suggested_before_intel_amt(self):
+    def test_usb_is_suggested_before_intel_amt_after_ble_default(self):
         app=self.app()
         with patch.object(knee_longer.list_ports,"comports",return_value=self.ports()):
             app._scan_ports()
-        self.assertEqual(next(iter(app._port_map.values())), "COM8")
+        self.assertEqual(next(iter(app._port_map.values())), knee_longer.BLE_PORT)
+        self.assertEqual([p for p in app._port_map.values() if not p.startswith("ble://")][0], "COM8")
         app.port_cb.current.assert_called_once_with(0)
 
     def test_refresh_preserves_explicit_port_selection(self):
@@ -38,14 +39,12 @@ class UsbConnectionTests(unittest.TestCase):
             app._scan_ports()
         app.port_cb.current.assert_not_called()
 
-    def test_missing_device_never_opens_fabricated_com6(self):
+    def test_missing_usb_keeps_ble_without_fabricating_com6(self):
         app=self.app()
-        app._port_map={}
-        with patch.object(knee_longer.list_ports,"comports",return_value=[]), patch.object(knee_longer.serial,"Serial") as serial, patch.object(knee_longer.messagebox,"showerror") as error:
-            app._connect()
+        with patch.object(knee_longer.list_ports,"comports",return_value=[]), patch.object(knee_longer.serial,"Serial") as serial:
+            app._scan_ports()
         serial.assert_not_called()
-        error.assert_called_once()
-        self.assertEqual(app._port_map,{})
+        self.assertEqual(app._port_map,{knee_longer.BLE_LABEL:knee_longer.BLE_PORT})
 
     def test_reader_closes_before_publishing_disconnect(self):
         app=self.app()

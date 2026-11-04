@@ -63,6 +63,37 @@ def wait_and_open(url: str, stop: threading.Event, timeout: float = 60) -> None:
             continue
 
 
+def running_kneerom(url: str) -> bool:
+    try:
+        opener = build_opener(ProxyHandler({}))
+        with opener.open(f'{url}/health', timeout=1) as response:
+            health = json.load(response)
+        return isinstance(health, dict) and health.get('app') == 'KneeROM' and health.get('status') == 'ok'
+    except (OSError, URLError, ValueError):
+        return False
+
+
+def open_managed_service(url: str, no_browser: bool) -> int:
+    launcher = ROOT / 'run_kneerom_public.ps1'
+    if not launcher.is_file():
+        print(f'Khong tim thay launcher: {launcher}', file=sys.stderr)
+        return 1
+    process = subprocess.Popen(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(launcher)],
+                               cwd=ROOT, creationflags=subprocess.CREATE_NO_WINDOW)
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if running_kneerom(url):
+            if not no_browser: webbrowser.open(url)
+            print(f'KneeROM dang chay: {url}', flush=True)
+            return 0
+        if process.poll() is not None and process.returncode != 0:
+            print('Khong khoi dong duoc dich vu. Xem D:\\bme\\logs\\launcher.status.log',file=sys.stderr)
+            return 1
+        time.sleep(.3)
+    print('Dich vu chua san sang. Xem thu muc logs.',file=sys.stderr)
+    return 1
+
+
 def check_environment() -> int:
     """Check imports without opening hardware or the database."""
     print(f"Python: {sys.version.split()[0]} ({sys.executable})")
@@ -75,8 +106,8 @@ def check_environment() -> int:
     for module_name, distribution in packages.items():
         try:
             module = importlib.import_module(module_name)
-            if module_name == "mediapipe" and not hasattr(module, "solutions"):
-                raise RuntimeError("Thieu API mp.solutions.pose; cai ban trong requirements.txt")
+            if module_name == "mediapipe":
+                from mediapipe.tasks.python.vision import PoseLandmarker
             print(f"  OK  {distribution}=={metadata.version(distribution)}")
         except Exception as exc:
             print(f"  LOI {distribution}: {exc}")
@@ -92,7 +123,7 @@ def check_environment() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Khoi dong KneeROM web.")
     parser.add_argument("--host", default=os.getenv("ACL_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=port_number, default=os.getenv("ACL_PORT", "5000"))
+    parser.add_argument("--port", type=port_number, default=os.getenv("ACL_PORT", "5001"))
     parser.add_argument("--no-browser", action="store_true", help="Khong tu mo trinh duyet")
     parser.add_argument("--check", action="store_true", help="Kiem tra thu vien, khong chay web")
     args = parser.parse_args(argv)
@@ -110,6 +141,13 @@ def main(argv: list[str] | None = None) -> int:
         return check_environment()
     if not APP_FILE.is_file():
         parser.error(f"Khong tim thay ung dung: {APP_FILE}")
+    url = browser_url(args.host, args.port)
+    if running_kneerom(url):
+        print(f'KneeROM da chay: {url}', flush=True)
+        if not args.no_browser: webbrowser.open(url)
+        return 0
+    if os.name == 'nt' and args.port == 5001 and not os.getenv('ACL_DATABASE') and not os.getenv('ACL_DATABASE_URL'):
+        return open_managed_service(url, args.no_browser)
     os.environ["ACL_HOST"] = args.host
     os.environ["ACL_PORT"] = str(args.port)
     url = browser_url(args.host, args.port)
