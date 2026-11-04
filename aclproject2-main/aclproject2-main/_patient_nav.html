@@ -1,25 +1,47 @@
-<aside class="patient-sidebar">
-    <a class="patient-brand" href="/dashboard" aria-label="KneeROM - Cổng bệnh nhân">
-        <span class="patient-brand-mark">KR</span>
-        <span><strong>KneeROM</strong><small>Phục hồi khớp gối</small></span>
-    </a>
-    <div class="patient-role">Cổng bệnh nhân</div>
-    <nav class="patient-nav" aria-label="Điều hướng bệnh nhân">
-        <a href="/dashboard" class="{{ 'active' if patient_active == 'dashboard' else '' }}" {% if patient_active == 'dashboard' %}aria-current="page"{% endif %}><span class="patient-nav-icon">⌂</span><span>Phòng tập</span></a>
-        <a href="/profile" class="{{ 'active' if patient_active == 'profile' else '' }}" {% if patient_active == 'profile' %}aria-current="page"{% endif %}><span class="patient-nav-icon">⌁</span><span>Tiến trình ROM</span></a>
-        <a href="/care" class="{{ 'active' if patient_active == 'care' else '' }}" {% if patient_active == 'care' %}aria-current="page"{% endif %}><span class="patient-nav-icon">＋</span><span>Theo dõi cùng bác sĩ</span></a>
-        <a href="/my_records" class="{{ 'active' if patient_active == 'records' else '' }}" {% if patient_active == 'records' %}aria-current="page"{% endif %}><span class="patient-nav-icon">▤</span><span>Hồ sơ đo</span></a>
-    </nav>
-    <div class="patient-sidebar-bottom">
-        {% if patient_display %}
-        <div class="patient-mini-profile"><span class="patient-avatar">{{ patient_display[0] | upper }}</span><span><b>{{ patient_display }}</b><small>Bệnh nhân</small></span></div>
-        {% endif %}
-        <a class="patient-logout" href="/logout"><span>↗</span><span>Đăng xuất</span></a>
+{% from '_ui.html' import brand, icon %}
+<aside class="patient-sidebar" aria-label="Điều hướng bệnh nhân">
+  {{ brand('/dashboard', 'Cổng bệnh nhân') }}
+  <nav class="patient-nav" aria-label="Điều hướng bệnh nhân">
+    {% for key, path, symbol, label in [('dashboard','/dashboard','house','Phòng tập'),('profile','/profile','chart-line','Tiến trình ROM'),('care','/care','first-aid-kit','Theo dõi cùng bác sĩ'),('records','/my_records','clipboard-text','Hồ sơ đo')] %}
+      <a
+        href="{{ path }}"
+        class="{{ 'active' if patient_active == key else '' }}"
+        {% if patient_active == key %}aria-current="page"{% endif %}
+        >{{ icon(symbol) }}<span>{{ label }}</span></a
+      >
+    {% endfor %}
+  </nav>
+  <div class="patient-sidebar-bottom">
+    {% if patient_display %}<div class="patient-mini-profile">
+      <span class="patient-avatar">{{ patient_display[0] | upper }}</span
+      ><span><b>{{ patient_display }}</b><small>Bệnh nhân</small></span>
+    </div>{% endif %}
+    <a class="patient-logout" href="/logout"
+      >{{ icon('sign-out') }}<span>Đăng xuất</span></a
+    >
+  </div>
+  <details class="mobile-account-menu">
+    <summary aria-label="Tài khoản bệnh nhân">
+      {{ icon('user-circle') }}
+    </summary>
+    <div>
+      {% if patient_display %}<strong
+        >{{ patient_display }}</strong
+      >{% endif %}<a href="/my_records">Hồ sơ đo</a
+      ><a href="/logout">Đăng xuất</a>
     </div>
+  </details>
 </aside>
-<nav class="patient-mobile-nav" aria-label="Điều hướng bệnh nhân trên điện thoại">
-    <a href="/dashboard" class="{{ 'active' if patient_active == 'dashboard' else '' }}"><span>⌂</span><small>Phòng tập</small></a>
-    <a href="/profile" class="{{ 'active' if patient_active == 'profile' else '' }}"><span>⌁</span><small>Tiến trình</small></a>
-    <a href="/care" class="{{ 'active' if patient_active == 'care' else '' }}"><span>＋</span><small>Bác sĩ</small></a>
-    <a href="/my_records" class="{{ 'active' if patient_active == 'records' else '' }}"><span>▤</span><small>Hồ sơ</small></a>
+<nav
+  class="patient-mobile-nav"
+  aria-label="Điều hướng bệnh nhân trên điện thoại"
+>
+  {% for key, path, symbol, label in [('dashboard','/dashboard','house','Phòng tập'),('profile','/profile','chart-line','Tiến trình'),('care','/care','first-aid-kit','Bác sĩ'),('records','/my_records','clipboard-text','Hồ sơ')] %}
+    <a
+      href="{{ path }}"
+      class="{{ 'active' if patient_active == key else '' }}"
+      {% if patient_active == key %}aria-current="page"{% endif %}
+      >{{ icon(symbol) }}<span>{{ label }}</span></a
+    >
+  {% endfor %}
 </nav>

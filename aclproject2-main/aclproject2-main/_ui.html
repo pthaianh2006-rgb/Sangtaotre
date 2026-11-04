@@ -1,0 +1,20 @@
+{% macro icon(name, extra='') -%}
+  <span
+    class="ui-icon {{ extra }}"
+    style="--icon: url('{{ url_for('static', filename='icons/' ~ name ~ '.svg') }}')"
+    aria-hidden="true"
+  ></span>
+{%- endmacro %}
+{% macro brand(href='/dashboard', role='') -%}
+  <a
+    class="portal-brand"
+    href="{{ href }}"
+    aria-label="KneeROM{{ ' - ' ~ role if role else '' }}"
+    ><span class="portal-monogram" aria-hidden="true">KR</span
+    ><span
+      ><strong>KneeROM</strong>{% if role %}<small
+        >{{ role }}</small
+      >{% endif %}</span
+    ></a
+  >
+{%- endmacro %}

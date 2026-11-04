@@ -1,397 +1,375 @@
-<!DOCTYPE html>
+{% from '_ui.html' import icon, brand %}
+<!doctype html>
 <html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <title>KneeROM - Cổng thông tin Bác sĩ</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='ui-v2.css') }}">
-    <script src="{{ url_for('static', filename='rehab.js') }}"></script>
-    <style>
-        :root {
-            --doctor-primary: #4f46e5;
-            --doctor-primary-dark: #3730a3;
-            --doctor-cyan: #38bdf8;
-            --doctor-green: #10b981;
-            --doctor-pink: #ec4899;
-            --doctor-ink: #17203a;
-            --doctor-muted: #718096;
-            --doctor-line: #e8edf5;
-            --doctor-bg: #f5f8fc;
-            --doctor-card: #ffffff;
-        }
-        * { box-sizing: border-box; }
-        html { scroll-behavior: smooth; }
-        body.page-admin.doctor-ui {
-            margin: 0;
-            padding: 0 !important;
-            min-height: 100vh;
-            font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
-            color: var(--doctor-ink);
-            background: var(--doctor-bg) !important;
-        }
-        .doctor-shell { min-height: 100vh; display: grid; grid-template-columns: 238px minmax(0, 1fr); }
-        .doctor-sidebar {
-            position: sticky;
-            top: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            padding: 26px 18px 20px;
-            color: #fff;
-            background: linear-gradient(175deg, #312e81 0%, #4338ca 52%, #5b4fe4 100%);
-            overflow: hidden;
-        }
-        .doctor-sidebar::before, .doctor-sidebar::after {
-            content: "";
-            position: absolute;
-            border-radius: 50%;
-            background: rgba(255,255,255,.08);
-        }
-        .doctor-sidebar::before { width: 180px; height: 180px; top: -100px; right: -85px; }
-        .doctor-sidebar::after { width: 230px; height: 230px; left: -130px; bottom: -140px; }
-        .doctor-brand, .doctor-nav, .doctor-sidebar-footer { position: relative; z-index: 1; }
-        .doctor-brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 26px; color: #fff; text-decoration: none; }
-        .doctor-brand-mark { width: 43px; height: 43px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 13px; color: #312e81; background: #fff; font-weight: 800; box-shadow: 0 10px 22px rgba(15,23,42,.2); }
-        .doctor-brand-copy { display: flex; flex-direction: column; line-height: 1.2; }
-        .doctor-brand-copy strong { font-size: 18px; }
-        .doctor-brand-copy small { margin-top: 3px; color: rgba(255,255,255,.68); font-size: 10px; letter-spacing: .11em; text-transform: uppercase; }
-        .doctor-nav { display: flex; flex-direction: column; gap: 7px; }
-        .doctor-nav a, .doctor-sidebar-footer a {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            min-height: 46px;
-            padding: 10px 13px;
-            border-radius: 13px;
-            color: rgba(255,255,255,.72);
-            text-decoration: none;
-            font-size: 13px;
-            font-weight: 600;
-        }
-        .doctor-nav a:hover, .doctor-nav a.active, .doctor-sidebar-footer a:hover { color: #fff; background: rgba(255,255,255,.15); transform: none; }
-        .doctor-nav-icon { width: 25px; height: 25px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 8px; background: rgba(255,255,255,.12); font-size: 12px; }
-        .doctor-sidebar-footer { margin-top: auto; display: grid; gap: 5px; }
-        .doctor-sidebar-footer a:last-child { color: #ffe4e6; }
-        .doctor-main { min-width: 0; padding: 28px clamp(22px, 3vw, 46px) 46px; }
-        .doctor-topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 24px; }
-        .doctor-topbar h1 { margin: 0; color: var(--doctor-ink); font-size: clamp(22px, 2.2vw, 30px); letter-spacing: -.035em; }
-        .doctor-topbar p { margin: 5px 0 0; color: var(--doctor-muted); font-size: 13px; }
-        .doctor-profile { display: flex; align-items: center; gap: 11px; padding: 8px 11px 8px 9px; border: 1px solid var(--doctor-line); border-radius: 16px; background: #fff; box-shadow: 0 8px 24px rgba(31,45,78,.06); }
-        .doctor-avatar { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; color: #fff; background: linear-gradient(135deg, var(--doctor-primary), var(--doctor-cyan)); font-weight: 800; }
-        .doctor-profile strong { display: block; font-size: 13px; }
-        .doctor-profile span { display: block; margin-top: 2px; color: var(--doctor-muted); font-size: 10px; }
-        .doctor-hero {
-            position: relative;
-            min-height: 208px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 22px;
-            margin-bottom: 22px;
-            padding: clamp(25px, 3vw, 38px);
-            overflow: hidden;
-            border-radius: 25px;
-            color: #fff;
-            background: linear-gradient(115deg, #4f46e5 0%, #6658eb 50%, #38bdf8 130%);
-            box-shadow: 0 20px 42px rgba(79,70,229,.18);
-        }
-        .doctor-hero::before, .doctor-hero::after { content: ""; position: absolute; border-radius: 50%; background: rgba(255,255,255,.09); }
-        .doctor-hero::before { width: 240px; height: 240px; right: 9%; top: -150px; }
-        .doctor-hero::after { width: 190px; height: 190px; right: -75px; bottom: -105px; }
-        .doctor-hero-copy { position: relative; z-index: 1; max-width: 650px; }
-        .doctor-eyebrow { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 11px; color: #dbeafe; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-        .doctor-hero h2 { margin: 0; max-width: 640px; font-size: clamp(26px, 3vw, 39px); line-height: 1.16; letter-spacing: -.04em; }
-        .doctor-hero p { max-width: 570px; margin: 13px 0 0; color: rgba(255,255,255,.8); font-size: 13px; line-height: 1.65; }
-        .doctor-hero-badge { position: relative; z-index: 1; width: 132px; height: 132px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(255,255,255,.22); border-radius: 36px; background: rgba(255,255,255,.12); backdrop-filter: blur(12px); transform: rotate(7deg); }
-        .doctor-hero-badge::before { content: "+"; color: #fff; font-size: 74px; font-weight: 300; line-height: 1; transform: rotate(-7deg); }
-        .doctor-content-grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(280px, .75fr); gap: 22px; align-items: start; }
-        .doctor-primary-column, .doctor-side-column { min-width: 0; display: grid; gap: 22px; }
-        .doctor-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-        .doctor-stat { position: relative; min-height: 126px; padding: 20px; overflow: hidden; border: 1px solid var(--doctor-line); border-radius: 19px; background: #fff; box-shadow: 0 10px 28px rgba(31,45,78,.055); }
-        .doctor-stat::after { content: ""; position: absolute; width: 76px; height: 76px; right: -26px; bottom: -34px; border-radius: 50%; background: var(--stat-soft, #eef2ff); }
-        .doctor-stat-label { color: var(--doctor-muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-        .doctor-stat-value { display: block; margin-top: 12px; color: var(--stat-color, var(--doctor-primary)); font-size: 29px; line-height: 1; font-weight: 800; letter-spacing: -.04em; }
-        .doctor-stat-note { display: block; margin-top: 8px; color: #96a0b4; font-size: 10px; }
-        .doctor-card { min-width: 0; padding: 22px; border: 1px solid var(--doctor-line); border-radius: 20px; background: var(--doctor-card); box-shadow: 0 10px 30px rgba(31,45,78,.05); }
-        .doctor-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 17px; }
-        .doctor-card-header h3 { margin: 0; color: var(--doctor-ink); font-size: 16px; letter-spacing: -.02em; }
-        .doctor-card-header span { color: var(--doctor-muted); font-size: 10px; }
-        .doctor-table-wrap { width: 100%; overflow-x: auto; }
-        .doctor-table { width: 100%; min-width: 590px; border-collapse: collapse; font-size: 12px; }
-        .doctor-table th { padding: 11px 10px; border-bottom: 1px solid var(--doctor-line); color: #8b96aa; background: #f9fbfe; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
-        .doctor-table td { padding: 13px 10px; border-bottom: 1px solid #edf1f7; color: #526078; vertical-align: middle; }
-        .doctor-table tbody tr:last-child td { border-bottom: 0; }
-        .doctor-table tbody tr:hover td { background: #fafbff; }
-        .patient-cell { display: flex; align-items: center; gap: 10px; min-width: 150px; color: var(--doctor-ink); font-weight: 650; }
-        .patient-avatar { width: 33px; height: 33px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 10px; color: var(--doctor-primary); background: #eef2ff; font-weight: 800; }
-        .week-pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; color: var(--doctor-primary); background: #eef2ff; font-size: 10px; font-weight: 700; }
-        .doctor-view-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 9px; color: var(--doctor-primary); background: #f0f2ff; text-decoration: none; font-size: 10px; font-weight: 700; white-space: nowrap; }
-        .doctor-view-btn:hover { color: #fff; background: var(--doctor-primary); transform: none; }
-        .doctor-calendar-month { margin-bottom: 15px; color: var(--doctor-ink); font-size: 13px; font-weight: 700; text-transform: capitalize; }
-        .doctor-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
-        .doctor-calendar span { min-height: 28px; display: grid; place-items: center; border-radius: 8px; color: #69758a; font-size: 10px; }
-        .doctor-calendar .weekday { color: #a1aabc; font-size: 9px; font-weight: 700; text-transform: uppercase; }
-        .doctor-calendar .outside { color: #cbd2dd; }
-        .doctor-calendar .today { color: #fff; background: var(--doctor-primary); box-shadow: 0 6px 12px rgba(79,70,229,.22); font-weight: 700; }
-        .activity-list { max-height: 348px; overflow-y: auto; scrollbar-color: #c7d0df transparent; }
-        .activity-item { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid #edf1f7; }
-        .activity-item:last-child { border-bottom: 0; }
-        .activity-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--doctor-green); background: #ecfdf5; font-size: 11px; font-weight: 800; }
-        .activity-copy strong { display: block; color: var(--doctor-ink); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .activity-copy span { display: block; margin-top: 3px; color: #98a2b3; font-size: 9px; }
-        .activity-angle { color: var(--doctor-green); font-size: 13px; font-weight: 800; }
-        .doctor-tools { grid-column: 1 / -1; }
-        .doctor-notice { padding: 11px 13px; margin: 10px 0; border-radius: 11px; color: #047857; background: #ecfdf5; font-size: 12px; }
-        .doctor-notice.error { color: #be123c; background: #fff1f2; }
-        .doctor-create-form { display: grid; grid-template-columns: 1fr 1.25fr 1.15fr auto; gap: 9px; margin: 14px 0 20px; }
-        .doctor-create-form input, .doctor-inline-form input { min-width: 0; min-height: 42px; padding: 9px 11px; border: 1px solid var(--doctor-line); border-radius: 10px; color: var(--doctor-ink); background: #fbfcfe; font: inherit; font-size: 11px; }
-        .doctor-create-form input:focus, .doctor-inline-form input:focus { outline: 0; border-color: #a5b4fc; box-shadow: 0 0 0 3px #eef2ff; }
-        .doctor-create-form button, .doctor-inline-form button, .doctor-danger-btn { min-height: 40px; padding: 9px 13px; border: 0; border-radius: 10px !important; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700; }
-        .doctor-create-form button { color: #fff; background: var(--doctor-primary); }
-        .doctor-inline-form { display: flex; align-items: center; gap: 7px; }
-        .doctor-inline-form input { width: 150px; }
-        .doctor-inline-form button { color: var(--doctor-primary); background: #eef2ff; }
-        .doctor-danger-btn { color: #be123c; background: #fff1f2; }
-        .doctor-mobile-actions { display: none; }
-        @media (max-width: 1120px) {
-            .doctor-shell { grid-template-columns: 82px minmax(0, 1fr); }
-            .doctor-sidebar { padding-inline: 12px; }
-            .doctor-brand { justify-content: center; padding-inline: 0; }
-            .doctor-brand-copy, .doctor-nav-label, .doctor-sidebar-footer span { display: none; }
-            .doctor-nav a, .doctor-sidebar-footer a { justify-content: center; padding-inline: 8px; }
-            .doctor-content-grid { grid-template-columns: minmax(0, 1fr) 270px; }
-            .doctor-create-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        }
-        @media (max-width: 860px) {
-            .doctor-shell { display: block; }
-            .doctor-sidebar { position: sticky; z-index: 20; width: 100%; height: auto; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; padding: 10px 14px; }
-            .doctor-brand { justify-content: flex-start; padding: 0; }
-            .doctor-brand-mark { width: 38px; height: 38px; border-radius: 11px; }
-            .doctor-brand-copy { display: flex; }
-            .doctor-brand-copy small { display: none; }
-            .doctor-nav { margin-left: auto; flex-direction: row; justify-content: flex-end; overflow-x: auto; }
-            .doctor-nav a { min-height: 38px; padding: 6px; }
-            .doctor-nav-label, .doctor-sidebar-footer { display: none; }
-            .doctor-main { padding: 20px 16px 38px; }
-            .doctor-content-grid { grid-template-columns: 1fr; }
-            .doctor-side-column { grid-template-columns: minmax(240px, .7fr) minmax(0, 1.3fr); }
-            .doctor-mobile-actions { display: flex; gap: 8px; }
-            .doctor-mobile-actions a { padding: 8px 10px; border-radius: 9px; color: var(--doctor-primary); background: #eef2ff; text-decoration: none; font-size: 10px; font-weight: 700; }
-        }
-        @media (max-width: 620px) {
-            .doctor-topbar { align-items: flex-start; }
-            .doctor-profile { display: none; }
-            .doctor-hero { min-height: 225px; align-items: flex-start; padding: 26px 22px; }
-            .doctor-hero-copy { padding-right: 55px; }
-            .doctor-hero-badge { position: absolute; width: 82px; height: 82px; right: -8px; bottom: -9px; border-radius: 24px; }
-            .doctor-hero-badge::before { font-size: 48px; }
-            .doctor-stats { grid-template-columns: 1fr; }
-            .doctor-stat { min-height: 105px; }
-            .doctor-side-column { grid-template-columns: 1fr; }
-            .doctor-card { padding: 18px 16px; border-radius: 17px; }
-            .doctor-create-form { grid-template-columns: 1fr; }
-            .doctor-inline-form { align-items: stretch; flex-direction: column; }
-            .doctor-inline-form input { width: 100%; }
-        }
-    </style>
-</head>
-<body class="page-admin doctor-ui">
-    <noscript><p class="empty-state">Vui lòng bật JavaScript để sử dụng đầy đủ giao diện bác sĩ.</p></noscript>
+    <link
+      rel="preload"
+      href="{{ url_for('static', filename='fonts/Geist-Regular.woff2') }}"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='rehab.css') }}"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='portal-ui.css', v='responsive-preview-1') }}"
+    />
+    <script src="{{ url_for('static', filename='rehab.js') }}" defer></script>
+    <script
+      src="{{ url_for('static', filename='doctor-portal.js', v='responsive-preview-1') }}"
+      defer
+    ></script>
+  </head>
+  <body class="page-admin doctor-ui portal-ui">
+    <a class="skip-link" href="#doctor-main">Đến tổng quan bác sĩ</a>
     <div class="doctor-shell">
-        <aside class="doctor-sidebar" aria-label="Điều hướng bác sĩ">
-            <a class="doctor-brand" href="/admin">
-                <span class="doctor-brand-mark">KR</span>
-                <span class="doctor-brand-copy"><strong>KneeROM</strong><small>Doctor Portal</small></span>
-            </a>
-            <nav class="doctor-nav">
-                <a class="active" href="#overview"><span class="doctor-nav-icon">01</span><span class="doctor-nav-label">Tổng quan</span></a>
-                <a href="#patients"><span class="doctor-nav-icon">02</span><span class="doctor-nav-label">Bệnh nhân</span></a>
-                <a href="#activity"><span class="doctor-nav-icon">03</span><span class="doctor-nav-label">Hoạt động</span></a>
-                {% if can_manage_doctors %}<a href="#doctor-accounts"><span class="doctor-nav-icon">04</span><span class="doctor-nav-label">Tài khoản bác sĩ</span></a>{% endif %}
-            </nav>
-            <div class="doctor-sidebar-footer">
-                <a href="/export_all"><span class="doctor-nav-icon">↓</span><span>Xuất dữ liệu</span></a>
-                <a href="/logout"><span class="doctor-nav-icon">↗</span><span>Đăng xuất</span></a>
-            </div>
-        </aside>
-
-        <main class="doctor-main">
-            <header class="doctor-topbar">
-                <div>
-                    <h1>Bảng điều khiển chuyên khoa</h1>
-                    <p id="doctor-date">Theo dõi phục hồi chức năng khớp gối</p>
-                </div>
-                <div class="doctor-mobile-actions"><a href="/export_all">Xuất dữ liệu</a><a href="/logout">Đăng xuất</a></div>
-                <div class="doctor-profile">
-                    <span class="doctor-avatar">BS</span>
-                    <span><strong>{{ session.get('name', 'Bác sĩ') }}</strong><span>Chuyên viên phục hồi</span></span>
-                </div>
-            </header>
-
-            <section class="doctor-hero" id="overview">
-                <div class="doctor-hero-copy">
-                    <span class="doctor-eyebrow">KneeROM Clinical Workspace</span>
-                    <h2>Chào {{ session.get('name', 'Bác sĩ') }}, hôm nay chúng ta tiếp tục theo dõi tiến trình phục hồi.</h2>
-                    <p>Dữ liệu Camera và IMU được tổng hợp trong một giao diện để bác sĩ đánh giá ROM, xem hồ sơ và đưa ra chỉ định nhanh hơn.</p>
-                </div>
-                <div class="doctor-hero-badge" aria-hidden="true"></div>
+      <aside class="doctor-sidebar" aria-label="Điều hướng bác sĩ">
+        {{ brand('/admin', 'Cổng bác sĩ') }}
+        <nav class="doctor-nav" aria-label="Điều hướng bác sĩ">
+          <a class="active" href="#overview" aria-current="location"
+            >{{ icon('house') }}<span>Tổng quan</span></a
+          ><a href="#patients">{{ icon('users') }}<span>Bệnh nhân</span></a
+          ><a href="#activity">{{ icon('pulse') }}<span>Hoạt động</span></a
+          >{% if can_manage_doctors %}<a href="#doctor-accounts"
+            >{{ icon('user-gear') }}<span>Tài khoản bác sĩ</span></a
+          >{% endif %}
+        </nav>
+        <div class="doctor-sidebar-footer">
+          <a href="/export_all"
+            >{{ icon('download-simple') }}<span>Xuất dữ liệu</span></a
+          ><a href="/logout">{{ icon('sign-out') }}<span>Đăng xuất</span></a>
+        </div>
+        <details class="mobile-account-menu">
+          <summary aria-label="Tài khoản bác sĩ">
+            {{ icon('user-circle') }}
+          </summary>
+          <div>
+            <strong>{{ session.get('name', 'Bác sĩ') }}</strong
+            ><a href="/export_all">Xuất dữ liệu</a
+            ><a href="/logout">Đăng xuất</a>
+          </div>
+        </details>
+      </aside>
+      <main class="doctor-main" id="doctor-main">
+        <header class="doctor-topbar" id="overview">
+          <div>
+            <h1>Tổng quan</h1>
+            <p>Chào {{ session.get('name', 'Bác sĩ') }}</p>
+          </div>
+          <div class="doctor-profile">
+            {{ icon('stethoscope') }}<span
+              ><strong>{{ session.get('name', 'Bác sĩ') }}</strong
+              ><small>Bác sĩ phục hồi chức năng</small></span
+            >
+          </div>
+        </header>
+        <section class="doctor-stats" aria-label="Số liệu tổng quan">
+          <div>
+            {{ icon('users') }}<span
+              >Bệnh nhân<strong>{{ total_patients }}</strong></span
+            >
+          </div>
+          <div>
+            {{ icon('pulse') }}<span
+              >Lượt đo<strong>{{ total_measurements }}</strong></span
+            >
+          </div>
+        </section>
+        <div class="doctor-content-grid">
+          <div class="doctor-primary-column">
+            <section class="portal-card" id="patients">
+              <div class="section-heading patient-search-heading">
+                <h2>Bệnh nhân</h2>
+                <label class="search-field"
+                  >{{ icon('magnifying-glass') }}<span class="sr-only"
+                    >Tìm bệnh nhân theo tên hoặc tài khoản</span
+                  ><input
+                    type="search"
+                    id="patient-search"
+                    placeholder="Tìm theo tên bệnh nhân"
+                    autocomplete="off"
+                    aria-controls="doctor-patients-table"
+                /></label>
+              </div>
+              <p id="patient-search-status" class="sr-only" role="status"></p>
+              <div class="doctor-table-wrap">
+                <table class="doctor-table" id="doctor-patients-table">
+                  <thead>
+                    <tr>
+                      <th>Bệnh nhân</th>
+                      <th class="desktop-column">Tuổi</th>
+                      <th class="desktop-column">Giai đoạn</th>
+                      <th class="desktop-column">Tài khoản</th>
+                      <th><span class="sr-only">Hồ sơ</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for patient in patients %}<tr data-patient-row>
+                      <td>
+                        <span class="patient-cell"
+                          ><span class="patient-avatar"
+                            >{{ patient[1][:1]|upper }}</span
+                          ><span
+                            ><strong>{{ patient[1] }}</strong
+                            ><small class="mobile-patient-meta"
+                              >Tuần {{ patient[3] }}</small
+                            ></span
+                          ></span
+                        >
+                      </td>
+                      <td class="desktop-column">{{ patient[2] }}</td>
+                      <td class="desktop-column">Tuần {{ patient[3] }}</td>
+                      <td class="desktop-column">{{ patient[4] }}</td>
+                      <td>
+                        <a
+                          class="doctor-view-btn"
+                          href="/admin/patient/{{ patient[0] }}"
+                          ><span class="desktop-column">Xem hồ sơ</span
+                          >{{ icon('caret-right') }}<span class="sr-only">
+                            của {{ patient[1] }}</span
+                          ></a
+                        >
+                      </td>
+                    </tr>{% else %}<tr>
+                      <td colspan="5" class="empty-state">
+                        Chưa có hồ sơ bệnh nhân.
+                      </td>
+                    </tr>{% endfor %}
+                    <tr id="patient-search-empty" hidden>
+                      <td colspan="5" class="empty-state">
+                        Không tìm thấy bệnh nhân phù hợp.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </section>
-
-            <div class="doctor-content-grid">
-                <div class="doctor-primary-column">
-                    <section class="doctor-stats" aria-label="Số liệu tổng quan">
-                        <article class="doctor-stat" style="--stat-color:#4f46e5;--stat-soft:#eef2ff;">
-                            <span class="doctor-stat-label">Tổng bệnh nhân</span>
-                            <strong class="doctor-stat-value">{{ total_patients }}</strong>
-                            <span class="doctor-stat-note">Hồ sơ đang được theo dõi</span>
-                        </article>
-                        <article class="doctor-stat" style="--stat-color:#10b981;--stat-soft:#ecfdf5;">
-                            <span class="doctor-stat-label">Lượt đo ROM</span>
-                            <strong class="doctor-stat-value">{{ total_measurements }}</strong>
-                            <span class="doctor-stat-note">Camera và cảm biến IMU</span>
-                        </article>
-                        <article class="doctor-stat" style="--stat-color:#ec4899;--stat-soft:#fdf2f8;">
-                            <span class="doctor-stat-label">Tài khoản bác sĩ</span>
-                            <strong class="doctor-stat-value">{{ doctors|length }}</strong>
-                            <span class="doctor-stat-note">Đang có trong hệ thống</span>
-                        </article>
-                        <article class="doctor-stat" style="--stat-color:#0ea5e9;--stat-soft:#ecfeff;">
-                            <span class="doctor-stat-label">Ảnh tiến triển</span>
-                            <strong class="doctor-stat-value">{{ total_care_updates }}</strong>
-                            <span class="doctor-stat-note">Bệnh nhân đã gửi theo dõi</span>
-                        </article>
-                    </section>
-
-                    <section class="doctor-card" id="patients">
-                        <div class="doctor-card-header"><h3>Danh sách bệnh nhân</h3><span>{{ total_patients }} hồ sơ</span></div>
-                        <div class="doctor-table-wrap">
-                            <table class="doctor-table">
-                                <thead><tr><th>Bệnh nhân</th><th>Tuổi</th><th>Giai đoạn</th><th>Tài khoản</th><th>Hành động</th></tr></thead>
-                                <tbody>
-                                {% for patient in patients %}
-                                    <tr>
-                                        <td><span class="patient-cell"><span class="patient-avatar">{{ patient[1][:1]|upper }}</span>{{ patient[1] }}</span></td>
-                                        <td>{{ patient[2] }} tuổi</td>
-                                        <td><span class="week-pill">Tuần {{ patient[3] }}</span></td>
-                                        <td>{{ patient[4] }}</td>
-                                        <td><a class="doctor-view-btn" href="/admin/patient/{{ patient[0] }}">Xem hồ sơ →</a></td>
-                                    </tr>
-                                {% else %}
-                                    <tr><td colspan="5" style="text-align:center;padding:28px;">Chưa có hồ sơ bệnh nhân.</td></tr>
-                                {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </section>
-                </div>
-
-                <aside class="doctor-side-column">
-                    <section class="doctor-card" aria-label="Lịch">
-                        <div class="doctor-card-header"><h3>Lịch theo dõi</h3><span>Hôm nay</span></div>
-                        <div class="doctor-calendar-month" id="calendar-month"></div>
-                        <div class="doctor-calendar" id="doctor-calendar"></div>
-                    </section>
-
-                    <section class="doctor-card" id="activity">
-                        <div class="doctor-card-header"><h3>Hoạt động mới nhất</h3><span>ROM gần đây</span></div>
-                        <div class="activity-list">
-                        {% for m in measurements %}
-                            <div class="activity-item">
-                                <span class="activity-icon">ROM</span>
-                                <span class="activity-copy"><strong>{{ m[1] or 'Chưa xác định' }}</strong><span>{{ m[3] }}</span></span>
-                                <span class="activity-angle">{{ m[2] }}°</span>
-                            </div>
-                        {% else %}
-                            <p style="color:var(--doctor-muted);font-size:12px;">Chưa có hoạt động đo mới.</p>
-                        {% endfor %}
-                        </div>
-                    </section>
-                </aside>
-
-                {% if can_manage_doctors %}
-                <section class="doctor-card doctor-tools" id="doctor-accounts">
-                    <div class="doctor-card-header"><h3>Quản lý tài khoản bác sĩ</h3><span>Chỉ dành cho quản trị viên</span></div>
-                    {% if doctor_message %}<div class="doctor-notice">{{ doctor_message }}</div>{% endif %}
-                    {% if doctor_error %}<div class="doctor-notice error">{{ doctor_error }}</div>{% endif %}
-                    <form class="doctor-create-form" action="/admin/doctors/create" method="post">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input name="username" placeholder="Tên đăng nhập" minlength="3" maxlength="64" required>
-                        <input name="name" placeholder="Họ tên bác sĩ" maxlength="120" required>
-                        <input name="password" type="password" placeholder="Mật khẩu (ít nhất 10 ký tự)" minlength="10" required>
-                        <button type="submit">Thêm bác sĩ</button>
-                    </form>
-                    <div class="doctor-table-wrap">
-                        <table class="doctor-table">
-                            <thead><tr><th>Họ tên</th><th>Tài khoản</th><th>Đổi mật khẩu</th><th>Trạng thái</th></tr></thead>
-                            <tbody>
-                            {% for doctor in doctors %}
-                                <tr>
-                                    <td><span class="patient-cell"><span class="patient-avatar">BS</span>{{ doctor[2] }}</span></td>
-                                    <td>{{ doctor[1] }}</td>
-                                    <td>
-                                        <form class="doctor-inline-form" action="/admin/doctors/{{ doctor[0] }}/password" method="post">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <input name="password" type="password" minlength="10" placeholder="Mật khẩu mới" required>
-                                            <button type="submit">Đổi</button>
-                                        </form>
-                                    </td>
-                                    <td>
-                                    {% if doctor[0] != session.user_id %}
-                                        <form action="/admin/doctors/{{ doctor[0] }}/delete" method="post" onsubmit="return confirm('Xóa tài khoản bác sĩ này?')">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <button class="doctor-danger-btn" type="submit">Xóa</button>
-                                        </form>
-                                    {% else %}<span class="week-pill">Đang đăng nhập</span>{% endif %}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-                {% endif %}
-            </div>
-        </main>
+            <section
+              class="portal-card doctor-trend"
+              aria-labelledby="trend-title"
+            >
+              <div class="section-heading">
+                <h2 id="trend-title">Tiến trình ROM</h2>
+                {% if trend_patient %}<a
+                  class="text-button"
+                  href="/admin/patient/{{ trend_patient.id }}"
+                  >Xem hồ sơ {{ icon('arrow-right') }}</a
+                >{% endif %}
+              </div>
+              {% if trend_patient %}<p class="muted">
+                {{ trend_patient.name }}<span class="chart-key"
+                  ><span>Camera</span><span>Cảm biến</span></span
+                >
+              </p>
+              <div
+                id="rom-trend"
+                class="rom-trend"
+                role="img"
+                aria-label="Biểu đồ các kết quả ROM gần đây của {{ trend_patient.name }}"
+              ></div>
+              <script type="application/json" id="rom-trend-data">{{ trend_points | tojson }}</script>
+              <p class="measurement-note">
+                Các kết quả của bệnh nhân có lượt đo mới nhất.
+              </p>{% else %}<p class="empty-state">
+                Biểu đồ sẽ xuất hiện khi có dữ liệu đo.
+              </p>{% endif %}
+            </section>
+          </div>
+          <aside class="doctor-side-column">
+            <section class="portal-card" id="activity">
+              <h2>Cập nhật gần nhất</h2>
+              {% if latest_care %}<div class="latest-care">
+                {% if latest_care.image_name %}<a
+                  href="/admin/patient/{{ latest_care.patient_id }}"
+                  ><img
+                    class="care-preview-image"
+                    src="{{ url_for('care_image', update_id=latest_care.id) }}"
+                    alt="Ảnh bệnh nhân gửi để theo dõi phục hồi"
+                    loading="lazy"
+                /></a>{% endif %}
+                <h3>{{ latest_care.name }}</h3>
+                <time class="muted">{{ latest_care.created_at }}</time>
+                <p class="care-note-preview">{{ latest_care.note }}</p>
+                <a
+                  class="text-button"
+                  href="/admin/patient/{{ latest_care.patient_id }}"
+                  >Xem hồ sơ {{ icon('arrow-right') }}</a
+                >
+              </div>{% else %}<div class="care-empty">
+                {{ icon('clipboard-text') }}
+                <p>Chưa có ảnh hoặc ghi chú mới từ bệnh nhân.</p>
+                <a class="text-button" href="#patients"
+                  >Xem danh sách bệnh nhân {{ icon('arrow-right') }}</a
+                >
+              </div>{% endif %}
+            </section>
+            <section class="portal-card recent-activity">
+              <h2>Hoạt động mới nhất</h2>
+              {% for m in measurements[:5] %}<a
+                class="activity-item"
+                href="/admin/patient/{{ m[4] }}"
+                ><span
+                  ><strong>{{ m[1] or 'Chưa xác định' }}</strong
+                  ><small>{{ m[3] }}</small></span
+                ><strong>{{ m[2] }}°</strong></a
+              >{% else %}<p class="muted">Chưa có hoạt động đo.</p>{% endfor %}
+            </section>
+          </aside>
+          {% if can_manage_doctors %}
+            <section class="portal-card doctor-tools" id="doctor-accounts">
+              <div class="section-heading">
+                <h2>Tài khoản bác sĩ</h2>
+                <span class="muted">{{ doctors|length }} tài khoản</span>
+              </div>
+              {% if doctor_message %}<div
+                class="alert alert-success"
+                role="status"
+              >
+                {{ doctor_message }}
+              </div>{% endif %}{% if doctor_error %}<div
+                class="alert alert-danger"
+                role="alert"
+              >
+                {{ doctor_error }}
+              </div>{% endif %}
+              <details
+                class="doctor-create-details"
+                {% if doctor_error %}open{% endif %}
+              >
+                <summary>
+                  {{ icon('plus') }}Thêm bác sĩ {{ icon('caret-down') }}
+                </summary>
+                <form
+                  class="doctor-create-form"
+                  action="/admin/doctors/create"
+                  method="post"
+                >
+                  <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                  />
+                  <div class="form-field">
+                    <label for="new-doctor-username">Tên đăng nhập</label
+                    ><input
+                      id="new-doctor-username"
+                      name="username"
+                      minlength="3"
+                      maxlength="64"
+                      autocomplete="off"
+                      required
+                    />
+                  </div>
+                  <div class="form-field">
+                    <label for="new-doctor-name">Họ tên bác sĩ</label
+                    ><input
+                      id="new-doctor-name"
+                      name="name"
+                      maxlength="120"
+                      autocomplete="name"
+                      required
+                    />
+                  </div>
+                  <div class="form-field">
+                    <label for="new-doctor-password">Mật khẩu</label
+                    ><input
+                      id="new-doctor-password"
+                      name="password"
+                      type="password"
+                      minlength="10"
+                      autocomplete="new-password"
+                      placeholder="Ít nhất 10 ký tự"
+                      required
+                    />
+                  </div>
+                  <button class="portal-button primary" type="submit">
+                    Thêm bác sĩ
+                  </button>
+                </form>
+              </details>
+              <div class="table-scroll">
+                <table class="doctor-table doctor-accounts-table">
+                  <thead>
+                    <tr>
+                      <th>Họ tên</th>
+                      <th>Tài khoản</th>
+                      <th>Đổi mật khẩu</th>
+                      <th>Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for doctor in doctors %}<tr>
+                      <td>{{ doctor[2] }}</td>
+                      <td>{{ doctor[1] }}</td>
+                      <td>
+                        <form
+                          class="doctor-inline-form"
+                          action="/admin/doctors/{{ doctor[0] }}/password"
+                          method="post"
+                        >
+                          <input
+                            type="hidden"
+                            name="csrf_token"
+                            value="{{ csrf_token() }}"
+                          /><label
+                            class="sr-only"
+                            for="doctor-password-{{ doctor[0] }}"
+                            >Mật khẩu mới cho {{ doctor[2] }}</label
+                          ><input
+                            id="doctor-password-{{ doctor[0] }}"
+                            name="password"
+                            type="password"
+                            minlength="10"
+                            autocomplete="new-password"
+                            placeholder="Mật khẩu mới"
+                            required
+                          /><button class="legbtn" type="submit">Đổi</button>
+                        </form>
+                      </td>
+                      <td>
+                        {% if doctor[0] != session.user_id %}<form
+                          action="/admin/doctors/{{ doctor[0] }}/delete"
+                          method="post"
+                          onsubmit="return confirm('Xóa tài khoản bác sĩ này?')"
+                        >
+                          <input
+                            type="hidden"
+                            name="csrf_token"
+                            value="{{ csrf_token() }}"
+                          /><button class="text-button danger" type="submit">
+                            Xóa
+                          </button>
+                        </form>{% else %}<span class="muted"
+                          >Đang đăng nhập</span
+                        >{% endif %}
+                      </td>
+                    </tr>{% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          {% endif %}
+        </div>
+      </main>
     </div>
-    <script>
-        (() => {
-            const now = new Date();
-            const dateNode = document.getElementById('doctor-date');
-            dateNode.textContent = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(now);
-
-            const monthNode = document.getElementById('calendar-month');
-            monthNode.textContent = new Intl.DateTimeFormat('vi-VN', { month: 'long', year: 'numeric' }).format(now);
-            const calendar = document.getElementById('doctor-calendar');
-            ['T2','T3','T4','T5','T6','T7','CN'].forEach(day => {
-                const cell = document.createElement('span');
-                cell.className = 'weekday';
-                cell.textContent = day;
-                calendar.appendChild(cell);
-            });
-            const year = now.getFullYear();
-            const month = now.getMonth();
-            const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const daysBefore = new Date(year, month, 0).getDate();
-            for (let index = 0; index < 42; index += 1) {
-                const cell = document.createElement('span');
-                const dayNumber = index - firstDay + 1;
-                if (dayNumber < 1) {
-                    cell.textContent = String(daysBefore + dayNumber);
-                    cell.className = 'outside';
-                } else if (dayNumber > daysInMonth) {
-                    cell.textContent = String(dayNumber - daysInMonth);
-                    cell.className = 'outside';
-                } else {
-                    cell.textContent = String(dayNumber);
-                    if (dayNumber === now.getDate()) cell.className = 'today';
-                }
-                calendar.appendChild(cell);
-            }
-        })();
-    </script>
-</body>
+    <nav
+      class="doctor-mobile-nav"
+      aria-label="Điều hướng bác sĩ trên điện thoại"
+    >
+      <a class="active" href="#overview"
+        >{{ icon('house') }}<span>Tổng quan</span></a
+      ><a href="#patients">{{ icon('users') }}<span>Bệnh nhân</span></a
+      ><a href="#activity">{{ icon('pulse') }}<span>Hoạt động</span></a
+      >{% if can_manage_doctors %}<a href="#doctor-accounts"
+        >{{ icon('user-gear') }}<span>Tài khoản</span></a
+      >{% endif %}
+    </nav>
+  </body>
 </html>

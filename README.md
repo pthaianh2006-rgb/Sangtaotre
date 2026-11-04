@@ -6,7 +6,9 @@
 
 - Web Flask: cổng bệnh nhân, cổng bác sĩ, hồ sơ đo, ảnh tiến triển và nhận xét.
 - Camera Camo/OpenCV, MediaPipe Pose Landmarker Tasks API, kiểm tra chất lượng hình và lưu ảnh tại góc lớn nhất.
-- Đo camera và IMU trong cùng lượt tập; lưu kết quả đồng thời.
+- Đo camera và IMU cùng lúc: Bắt đầu đo một lần, Dừng đo cả hai nguồn, rồi Lưu kết quả chung.
+- Sau khi dừng, kết quả và ảnh được giữ riêng cho phiên đăng nhập trong 10 phút để xem lại và lưu. Không lưu thiếu một nguồn; thử lưu lại không tạo bản ghi trùng.
+- Hai kết quả là ROM lớn nhất trong cùng lượt tập, không nhất thiết tại cùng thời điểm. Luồng này không đổi quy ước góc của cảm biến.
 - ESP2 DevKit V1 → ESP-NOW → ESP1 ESP32-S3 → BLE → laptop. USB vẫn hỗ trợ chẩn đoán.
 - Giao diện Tkinter theo dõi góc và xuất Excel; tiện ích xuất báo cáo Word.
 - PostgreSQL qua `ACL_DATABASE_URL`; SQLite dùng cho kiểm thử và chế độ dự phòng được cấu hình rõ ràng.
@@ -61,3 +63,7 @@ Các kiểm thử dùng cơ sở dữ liệu tạm và cảm biến giả lập.
 ## Phạm vi mã nguồn
 
 Repo gồm backend, giao diện, firmware, launcher, công cụ di chuyển dữ liệu và kiểm thử. Database, ảnh bệnh nhân, báo cáo cá nhân, mật khẩu, chứng chỉ tunnel, log, bản sao lưu, môi trường Python và trọng số mô hình được giữ ngoài Git. Tài khoản và hồ sơ đã có trên máy không bị xóa khi cập nhật source.
+
+## Responsive UI preview
+
+See [desktop/mobile screenshots and preview instructions](docs/ui-preview.md). The login page has no image yet. Review branch `ui/kneerom-responsive` before merging into `main`.

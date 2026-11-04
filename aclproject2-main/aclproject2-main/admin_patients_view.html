@@ -65,8 +65,9 @@
         @media (max-width:920px) { .record-grid{grid-template-columns:1fr} .record-side{display:grid;grid-template-columns:1fr 1fr;gap:18px}.record-side .record-card{margin:0} }
         @media (max-width:680px) { .record-shell{padding:18px 14px 45px}.record-doctor{display:none}.record-hero{padding:24px 21px}.record-stats{grid-template-columns:1fr}.record-side{display:block}.record-side .record-card+.record-card{margin-top:16px}.record-compare{grid-template-columns:1fr}.record-update{grid-template-columns:1fr}.record-update>img{max-height:300px} }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='portal-ui.css', v='responsive-preview-1') }}">
 </head>
-<body>
+<body class="portal-ui doctor-ui record-page">
     <main class="record-shell">
         <header class="record-top"><a class="record-back" href="/admin">← Quay lại bảng điều khiển</a><div class="record-doctor">Cổng thông tin bác sĩ KneeROM</div></header>
 

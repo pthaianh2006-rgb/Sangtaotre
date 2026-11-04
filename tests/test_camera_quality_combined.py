@@ -209,9 +209,8 @@ class PairedRoutes(unittest.TestCase):
 
     def test_peak_from_other_generation_never_saved(self):
         self.seed(); b._camera_peak['generation']-=1
-        with self.assertLogs(b.logger,level='ERROR'):
-            response=self.post('/measurement/save_combined')
-        self.assertEqual(response.status_code,503)
+        response=self.post('/measurement/save_combined')
+        self.assertEqual(response.status_code,409)
         self.assertEqual(self.counts(),[0,0])
 
     def test_csrf_required(self):

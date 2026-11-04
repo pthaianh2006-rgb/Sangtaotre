@@ -323,20 +323,24 @@ _camera_error = None
 _stream_slots = threading.BoundedSemaphore(2)
 _camera_quality = CameraQuality()
 _camera_peak = None
+# Stopped sessions are immutable and private to the browser that recorded them.
+_measurement_drafts = {}
+MEASUREMENT_DRAFT_SECONDS = 600
+MAX_MEASUREMENT_DRAFTS = 16
 camera_last_data = 0.0
 _hardware_owner = None
 _hardware_last_seen = 0.0
 _hardware_generation = 0
 HARDWARE_LEASE_SECONDS = 15.0
 _HARDWARE_ENDPOINTS = {
-    "combined_status", "save_combined", "measurement_start", "video_feed", "get_angle", "get_max_rom", "set_leg", "toggle_crowd",
+    "combined_status", "measurement_start", "video_feed", "get_angle", "get_max_rom", "set_leg", "toggle_crowd",
     "get_imu_angle", "get_imu_max_rom", "imu_status", "imu_reconnect",
     "set_imu_mode", "imu_ports", "imu_connect", "imu_cmd", "reset_rom", "save_rom",
 }
 _IMU_ENDPOINTS = {"combined_status", "get_imu_angle", "get_imu_max_rom", "imu_status", "imu_reconnect", "set_imu_mode", "imu_connect", "imu_cmd"}
 _PATIENT_ENDPOINTS = {
     "save_rom", "get_measurements", "delete_all_me",
-    "care_upload", "measurement_stop",
+    "care_upload", "measurement_stop", "save_combined", "measurement_draft_image",
 }
 
 
@@ -638,6 +642,9 @@ def logout():
             _hardware_owner = None
             _hardware_last_seen = 0.0
             _reset_tracking()
+        for token, draft in list(_measurement_drafts.items()):
+            if session.get('role') == 'patient' and _owns_measurement_draft(draft):
+                del _measurement_drafts[token]
     session.clear()
     return redirect(url_for("home"))
 
@@ -1033,23 +1040,109 @@ def measurement_start():
         return jsonify(success=False, message='Yêu cầu bắt đầu đo không hợp lệ.'), 400
     if payload.get("combined"):
         _reset_tracking()
+    _prune_measurement_drafts()
+    for token, draft in list(_measurement_drafts.items()):
+        if _owns_measurement_draft(draft) and not draft.get('result'):
+            del _measurement_drafts[token]
+    session.pop('measurement_draft', None)
     return jsonify(success=True, active=True)
+
+
+def _prune_measurement_drafts():
+    now = time.monotonic()
+    for token, draft in list(_measurement_drafts.items()):
+        if draft['expires'] <= now:
+            del _measurement_drafts[token]
+
+
+def _owns_measurement_draft(draft):
+    return (draft['owner'] == session.get('user_id')
+            and draft['csrf_token'] == session.get('csrf_token'))
+
+
+def _combined_capture_error():
+    now = time.monotonic()
+    if (not _camera_quality.status['ready'] or not camera_last_data
+            or now-camera_last_data > 1 or not _camera_peak):
+        return 'Camera chưa có hình đủ rõ. Đưa đủ hông, gối và cổ chân vào khung.'
+    if (not USE_IMU or not imu_connected or imu_calibrating
+            or not imu_last_data or now-imu_last_data > 3):
+        return 'Chưa có tín hiệu IMU mới. Kiểm tra cảm biến trước khi lưu cả hai kết quả.'
+    if (_camera_peak['owner'] != session['user_id']
+            or _camera_peak['generation'] != _hardware_generation):
+        return 'Ảnh không thuộc lượt đo hiện tại. Vui lòng đo lại.'
+    return None
+
+
+def _draft_preview(token, draft):
+    return dict(success=True, active=False, can_save=not bool(draft.get('result')),
+                draft_token=token, camera_rom=draft['values']['camera'],
+                imu_rom=draft['values']['imu'], time=draft['measured_at'],
+                captured_at=draft['captured_at'],
+                snapshot_url=url_for('measurement_draft_image', token=token))
 
 
 @app.route("/measurement/stop", methods=["POST"])
 def measurement_stop():
     global _hardware_owner, _hardware_last_seen
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify(success=False, message='Yêu cầu dừng đo không hợp lệ.'), 400
     with _state_lock:
-        if _hardware_owner == session["user_id"]:
+        _prune_measurement_drafts()
+        preserve = payload.get('preserve') is True
+        owns_device = _hardware_owner == session['user_id'] and _hardware_active()
+        if preserve and not owns_device:
+            token = session.get('measurement_draft')
+            draft = _measurement_drafts.get(token)
+            if not draft:
+                # Recover a lost stop response without depending on its Set-Cookie.
+                for candidate, pending in reversed(list(_measurement_drafts.items())):
+                    if _owns_measurement_draft(pending) and not pending.get('result'):
+                        token, draft = candidate, pending
+                        break
+            if draft and _owns_measurement_draft(draft):
+                return jsonify(_draft_preview(token, draft))
+            return jsonify(success=False, message='Không còn lượt đo đang hoạt động để dừng.'), 409
+        result = dict(success=True, active=False, can_save=False)
+        if preserve:
+            error = _combined_capture_error()
+            if error:
+                result['message'] = 'Đã dừng cả hai nguồn. Chưa lưu: ' + error
+            else:
+                if len(_measurement_drafts) >= MAX_MEASUREMENT_DRAFTS:
+                    return jsonify(success=False, message='Chưa giữ được kết quả. Lượt đo vẫn đang chạy; hãy thử dừng lại sau.'), 503
+                token = secrets.token_urlsafe(24)
+                draft = dict(owner=session['user_id'], csrf_token=session.get('csrf_token'),
+                             generation=_hardware_generation, peak=dict(_camera_peak),
+                             values=dict(camera=max_rom_session, imu=imu_max_rom),
+                             measured_at=datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                             captured_at=_camera_peak['captured_at'],
+                             expires=time.monotonic()+MEASUREMENT_DRAFT_SECONDS)
+                _measurement_drafts[token] = draft
+                session['measurement_draft'] = token
+                result = _draft_preview(token, draft)
+        if _hardware_owner == session['user_id']:
             _hardware_owner = None
             _hardware_last_seen = 0.0
             _reset_tracking()
-    return jsonify(success=True, active=False)
+    return jsonify(result)
+
+
+@app.route('/measurement/draft/<token>/image')
+def measurement_draft_image(token):
+    with _state_lock:
+        _prune_measurement_drafts()
+        draft = _measurement_drafts.get(token)
+        if not draft or not _owns_measurement_draft(draft) or not draft.get('peak'):
+            return jsonify(success=False, message='Không tìm thấy ảnh của lượt đo này.'), 404
+        jpeg = draft['peak']['jpeg']
+    return send_file(BytesIO(jpeg), mimetype='image/jpeg', max_age=0)
 
 
 @app.route("/health")
 def health():
-    return jsonify(status="ok", app="KneeROM", build="no-game-ble-20261104",
+    return jsonify(status="ok", app="KneeROM", build="single-session-20261104",
                    pose_api="tasks", pose_model_ready=POSE_MODEL.is_file(),
                    llm_runtime="LiteRT-LM", llm_ready=_summary_jobs.available())
 
@@ -1237,10 +1330,12 @@ def reset_rom(source):
 
 
 
-def _save_camera_capture(conn, measurement_id, measured_at, imu_value=None, imu_id=None):
+def _save_camera_capture(conn, measurement_id, measured_at, imu_value=None, imu_id=None,
+                         peak=None, generation=None):
     """Write one peak JPEG; caller commits image metadata and measurements together."""
-    peak = _camera_peak
-    if not peak or peak['owner'] != session['user_id'] or peak['generation'] != _hardware_generation:
+    peak = _camera_peak if peak is None else peak
+    generation = _hardware_generation if generation is None else generation
+    if not peak or peak['owner'] != session['user_id'] or peak['generation'] != generation:
         raise ValueError('Chưa có ảnh hợp lệ của lượt đo này.')
     CARE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     name = secrets.token_hex(24) + '.jpg'
@@ -1267,20 +1362,40 @@ def _save_camera_capture(conn, measurement_id, measured_at, imu_value=None, imu_
 @app.route('/measurement/save_combined', methods=['POST'])
 def save_combined():
     global max_rom_session, imu_max_rom, camera_last_data, imu_last_data, _camera_peak
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify(success=False, message='Yêu cầu lưu không hợp lệ.'), 400
     with _state_lock:
-        now = time.monotonic()
-        if not _camera_quality.status['ready'] or not camera_last_data or now-camera_last_data > 1 or not _camera_peak:
-            return jsonify(success=False, message='Camera chưa có hình đủ rõ. Đưa đủ hông–gối–cổ chân vào khung.'), 409
-        if not USE_IMU or not imu_connected or imu_calibrating or not imu_last_data or now-imu_last_data > 3:
-            return jsonify(success=False, message='Chưa có tín hiệu IMU mới. Kiểm tra cảm biến trước khi lưu cả hai kết quả.'), 409
-        values = {'camera': max_rom_session, 'imu': imu_max_rom}
-        measured_at = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _prune_measurement_drafts()
+        token = payload.get('draft_token')
+        draft = None
+        if 'draft_token' in payload:
+            if not isinstance(token, str):
+                return jsonify(success=False, message='Lượt đo không hợp lệ.'), 400
+            draft = _measurement_drafts.get(token)
+            if not draft or not _owns_measurement_draft(draft):
+                return jsonify(success=False, message='Kết quả đã hết hạn hoặc không thuộc phiên đăng nhập này. Vui lòng đo lại.'), 409
+            if draft.get('result'):
+                return jsonify(draft['result'])
+            values, peak = draft['values'], draft['peak']
+            measured_at, generation = draft['measured_at'], draft['generation']
+        else:
+            # Preserve compatibility for older clients that finish while recording.
+            if _hardware_owner != session['user_id'] or not _hardware_active():
+                return jsonify(success=False, message='Bấm Bắt đầu đo trước khi lưu.'), 409
+            error = _combined_capture_error()
+            if error:
+                return jsonify(success=False, message=error), 409
+            values = dict(camera=max_rom_session, imu=imu_max_rom)
+            peak, generation = _camera_peak, _hardware_generation
+            measured_at = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         conn = connect_db()
         image_path = None
         try:
             ids = {source: insert_measurement(conn, session['user_id'], value, measured_at, source)
                    for source, value in values.items()}
-            image_path, update_id = _save_camera_capture(conn, ids['camera'], measured_at, values['imu'], ids['imu'])
+            image_path, update_id = _save_camera_capture(
+                conn, ids['camera'], measured_at, values['imu'], ids['imu'], peak, generation)
             conn.commit()
         except (*DatabaseError, OSError, ValueError):
             conn.rollback()
@@ -1290,14 +1405,17 @@ def save_combined():
             return jsonify(success=False, message='Chưa lưu được lượt đo. Kết quả vẫn được giữ để bạn thử lại.'), 503
         finally:
             conn.close()
-        captured_at = _camera_peak['captured_at']
-        _camera_peak = None
-        max_rom_session = imu_max_rom = 0
-        camera_last_data = imu_last_data = 0.0
-        return jsonify(success=True, camera_rom=values['camera'], imu_rom=values['imu'],
-                       camera_id=ids['camera'], imu_id=ids['imu'], time=measured_at,
-                       snapshot_url=url_for('care_image', update_id=update_id), captured_at=captured_at)
-
+        result = dict(success=True, camera_rom=values['camera'], imu_rom=values['imu'],
+                      camera_id=ids['camera'], imu_id=ids['imu'], time=measured_at,
+                      snapshot_url=url_for('care_image', update_id=update_id), captured_at=peak['captured_at'])
+        if draft is not None:
+            draft['result'] = result
+            draft.pop('peak', None)
+        else:
+            _camera_peak = None
+            max_rom_session = imu_max_rom = 0
+            camera_last_data = imu_last_data = 0.0
+        return jsonify(result)
 
 
 @app.route("/save_rom/<source>", methods=["POST"])
@@ -1561,18 +1679,36 @@ def admin():
     cursor.execute("SELECT id, username, name FROM doctors ORDER BY id")
     doctors = cursor.fetchall()
     cursor.execute("""
-        SELECT measurements.id, patients.name, measurements.angle, measurements.time
+        SELECT measurements.id, patients.name, measurements.angle, measurements.time,
+               measurements.patient_id, measurements.source
         FROM measurements
         LEFT JOIN patients ON patients.id = measurements.patient_id
-        ORDER BY measurements.id DESC
+        ORDER BY measurements.id DESC LIMIT 50
     """)
     measurements = cursor.fetchall()
+    cursor.execute("""
+        SELECT c.id, p.name, c.note, c.created_at, c.image_name, c.patient_id
+        FROM care_updates c JOIN patients p ON p.id=c.patient_id
+        ORDER BY c.id DESC LIMIT 1
+    """)
+    care_row = cursor.fetchone()
+    latest_care = dict(zip(('id','name','note','created_at','image_name','patient_id'), care_row)) if care_row else None
+    trend_patient = None
+    trend_points = []
+    if measurements and measurements[0][4] is not None:
+        recent = measurements[0]
+        trend_patient = dict(id=recent[4], name=recent[1])
+        selected = [row for row in measurements if row[4] == recent[4]][:14]
+        trend_points = [dict(angle=float(row[2]), time=str(row[3]), source=row[5])
+                        for row in reversed(selected)
+                        if row[2] is not None and math.isfinite(float(row[2]))]
     conn.close()
 
     return render_template("admin_dashboard.html", total_patients=total_patients,
                            total_measurements=total_measurements,
                            total_care_updates=total_care_updates, patients=patients,
                            measurements=measurements, doctors=doctors,
+                           latest_care=latest_care, trend_patient=trend_patient, trend_points=trend_points,
                            can_manage_doctors=True,
                            doctor_message=request.args.get("doctor_message", ""),
                            doctor_error=request.args.get("doctor_error", ""))

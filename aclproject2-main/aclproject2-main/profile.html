@@ -21,8 +21,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='ui-v2.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='patient-portal.css', v='no-game-20261104') }}">
     <script src="{{ url_for('static', filename='rehab.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='portal-ui.css', v='responsive-preview-1') }}">
 </head>
-<body class="page-profile patient-portal-page">
+<body class="page-profile patient-portal-page portal-ui">
     <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
     {% set patient_active = 'profile' %}
     {% set patient_display = user[1] %}

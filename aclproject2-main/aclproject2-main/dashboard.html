@@ -1,268 +1,466 @@
-<!DOCTYPE html>
+{% from '_ui.html' import icon %}
+<!doctype html>
 <html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <title>KneeROM - Phòng tập phục hồi chức năng</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #0E82FD; --primary-dark: #0A6AD4; --teal: #14C0C6;
-            --green: #16A34A; --amber: #F59E0B; --ink: #1B2559; --muted: #6B7A99;
-            --line: #E6ECF5; --bg: #F3F7FF; --soft: #F1F5FC;
-        }
-        * { box-sizing: border-box; }
-        body { font-family: 'Poppins', 'Segoe UI', Arial, sans-serif; background: var(--bg); color: var(--ink); margin: 0; padding: 25px; }
-        .topbar { max-width: 1300px; margin: 0 auto 22px; display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; color: var(--ink); }
-        .topbar span { background: linear-gradient(150deg,#0E82FD,#14C0C6); color:#fff; width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; }
-        .grid-layout { display: grid; grid-template-columns: 1.6fr 1fr; gap: 24px; max-width: 1300px; margin: auto; }
-        .card { background: #fff; padding: 26px; border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(14,130,253,0.06); }
-        h2, h3 { font-weight: 700; }
-        .video-box { width: 100%; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: #000; }
-        .btn { display: inline-block; width: 100%; padding: 14px; border: none; border-radius: 12px; font-weight: 600; text-align: center; text-decoration: none; cursor: pointer; font-size: 15px; margin-top: 12px; box-sizing: border-box; font-family: inherit; transition: .2s; }
-        .btn:hover { transform: translateY(-1px); }
-        .btn-success { background: var(--green); color: white; box-shadow: 0 8px 18px rgba(22,163,74,.22); }
-        .btn-profile { background: var(--primary); color: #fff; box-shadow: 0 8px 18px rgba(14,130,253,.22); }
-        .btn-logout { background: #FDECEC; color: #E0413A; }
-        .rom-text { font-size: 64px; text-align: center; font-weight: 800; margin: 10px 0; }
-        ul { padding-left: 18px; color: var(--muted); }
-        li { margin-bottom: 8px; }
-        p { line-height: 1.6; }
-
-        .stepper { display: flex; gap: 10px; margin-bottom: 22px; }
-        .step { flex: 1; text-align: center; padding: 12px; border-radius: 12px; background: var(--soft); color: var(--muted); font-weight: 600; font-size: 14px; border: 1px solid var(--line); transition: .2s; }
-        .step.active { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 8px 16px rgba(14,130,253,.28); }
-        .step.done { background: #E3F9EC; color: var(--green); border-color: #BBF0CF; }
-
-        .measurement-panels { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:20px; }
-        .measurement-panels > div { min-width:0; }
-        .measurement-guide { color:var(--muted); font-size:13px; }
-        .quality-status { border:1px solid #FDE68A; background:#FFFBEB; color:#92400E; padding:10px 12px; border-radius:10px; font-size:13px; }
-        .quality-status[data-ready="true"] { border-color:#A7F3D0; background:#ECFDF5; color:#065F46; }
-        .measurement-panels .leg-controls { flex-wrap:wrap; }
-        .measurement-panels #usbBox, .measurement-panels #wifiBox, .measurement-panels #bleBox, .measurement-panels .cal-buttons { flex-wrap:wrap; }
-        .measurement-panels #portSelect { min-width:90px; }
-        .measurement-panels .live-row { flex-wrap:wrap; gap:8px; font-size:15px; }
-        @media(max-width:1200px) { .measurement-panels { grid-template-columns:1fr; } }
-        @media(max-width:560px) { .compare-box { flex-direction:column; } }
-        .connection-visible { display: flex; }
-        .connection-hidden { display: none; }
-        .cal-buttons { display: flex; gap: 8px; margin-top: 10px; }
-        .cal-buttons button { flex: 1; padding: 12px; border: none; border-radius: 11px; font-weight: 600; cursor: pointer; color: #fff; font-family: inherit; }
-        .live-row { display: flex; justify-content: space-around; font-size: 18px; margin: 16px 0; }
-        .compare-box { display: flex; gap: 15px; margin: 20px 0; }
-        .compare-item { flex: 1; text-align: center; background: var(--soft); padding: 22px; border-radius: 14px; border: 1px solid var(--line); }
-        .compare-item .big { font-size: 40px; font-weight: 800; margin: 8px 0; }
-        .status-badge { font-size: 13px; padding: 4px 11px; border-radius: 20px; background: #7f1d1d; color: #fff; font-weight: 600; }
-        .legbtn { padding: 9px 16px; border: 1.5px solid var(--line); border-radius: 10px; background: #fff; color: var(--muted); cursor: pointer; font-weight: 600; font-family: inherit; }
-        .legbtn-active { background: var(--primary); color: #fff; border-color: var(--primary); }
-        .legbtn:disabled { opacity: 0.4; cursor: not-allowed; background: #F1F5FC; color: var(--muted); }
-
-        .table-section { margin-top: 22px; background: #fff; padding: 20px; border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(14,130,253,0.06); }
-        .table-title { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
-        .table-scroll { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; }
-        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
-        th { background: #F6F9FF; color: var(--primary); padding: 11px; font-weight: 600; border-bottom: 1px solid var(--line); position: sticky; top: 0; }
-        td { padding: 11px; border-bottom: 1px solid var(--line); color: var(--ink); }
-        tr:nth-child(even) { background: #FBFCFF; }
-        .pill { background:#EAF3FF; padding:4px 10px; border-radius:20px; color:var(--primary); font-weight:700; }
-        @media (max-width: 980px) { .grid-layout { grid-template-columns: 1fr; } }
-    </style>
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='rehab.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='ui-v2.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='patient-portal.css', v='no-game-20261104') }}">
-    <script src="{{ url_for('static', filename='rehab.js') }}"></script>
-</head>
-<body class="page-dashboard patient-portal-page">
-    <noscript><p class="empty-state">Vui lòng bật JavaScript để dùng dữ liệu trực tiếp và các nút điều khiển.</p></noscript>
-    {% set patient_active = 'dashboard' %}
-    {% set patient_display = name %}
+    <link
+      rel="preload"
+      href="{{ url_for('static', filename='fonts/Geist-Regular.woff2') }}"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='rehab.css') }}"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='portal-ui.css', v='responsive-preview-1') }}"
+    />
+    <script src="{{ url_for('static', filename='rehab.js') }}" defer></script>
+    <script
+      src="{{ url_for('static', filename='dashboard.js', v='responsive-preview-1') }}"
+      defer
+    ></script>
+  </head>
+  <body class="page-dashboard patient-portal-page portal-ui">
+    <a class="skip-link" href="#patient-main">Đến phòng tập</a>
+    <noscript
+      ><p class="alert">
+        Bật JavaScript để dùng camera, cảm biến và lưu kết quả.
+      </p></noscript
+    >
+    {% set patient_active = 'dashboard' %}{% set patient_display = name %}
     <div class="patient-shell">
-        {% include '_patient_nav.html' %}
-        <main class="patient-main">
-            <div class="patient-content">
-                <header class="patient-topbar">
-                    <div><h1>Phòng tập của tôi</h1><p>Đo, tập luyện và theo dõi tiến triển trong một nơi.</p></div>
-                    <div class="patient-topbar-user"><span class="patient-avatar">{{ name[0] | upper }}</span><div><b>{{ name }}</b><small>Tuần phục hồi {{ week }}</small></div></div>
-                </header>
-                <section class="patient-hero">
-                    <small>Kế hoạch hôm nay</small>
-                    <h2>THeo dõi tiến trình.</h2>
-                    <p>Đo camera và cảm biến cùng lúc trong một lượt tập.</p>
-                    <div class="patient-hero-metrics"><span>Tuần {{ week }}</span><span>Mục tiêu {{ target }}</span><span>{{ phase }}</span></div>
-                </section>
-                <div class="grid-layout">
-        <div>
-            <div class="card">
-                <span class="section-kicker">Phòng tập trực tiếp</span>
-                <h2 style="margin-top:0; color:var(--primary);">Đo camera + cảm biến cùng lúc</h2>
-
-                <div id="calibBanner" style="display:none; background:#FFF4E5; color:#C2410C; padding:14px; border-radius:12px; text-align:center; font-weight:600; margin-bottom:15px; font-size:15px; border:1px solid #FFE0B2;">
-                    ⏳ ĐANG XÁC ĐỊNH BIAS — GIỮ YÊN CHÂN, ĐỪNG ĐỘNG (vừa bấm nút EN trên ESP32)
-                </div>
-
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-                    <button type="button" class="legbtn" id="startMeasurement" onclick="startMeasurement(this)">▶ Bắt đầu đo</button>
-                    <button type="button" class="legbtn" id="stopMeasurement" onclick="stopMeasurement(this)" disabled>■ Dừng đo</button>
-                    <span id="measurementStatus" role="status" style="color:var(--muted);align-self:center;">Thiết bị chưa được giữ cho lượt đo.</span>
-                </div>
-                <p class="measurement-guide">Đặt camera ngang người, thấy đủ hông–gối–cổ chân; đeo IMU ở đùi và cẳng chân. Bấm Bắt đầu đo, chờ hai nguồn sẵn sàng rồi gập–duỗi. Chỉ lưu khi cả hai nguồn có tín hiệu.</p>
-                <div class="measurement-panels">
-                <!-- ===== BƯỚC 1: CAMERA ===== -->
-                <div id="step1">
-                    <p style="color:var(--muted);">Camera · Kiểm tra hình trước khi ghi góc.</p>
-                    <div class="leg-controls" style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-                        <span style="color:var(--muted); font-size:14px;">🦵 Đo chân:</span>
-                        <button onclick="setLeg('left', this)" class="legbtn" id="legBtn-left">Chân trái</button>
-                        <button onclick="setLeg('right', this)" class="legbtn" id="legBtn-right">Chân phải</button>
-                        <button onclick="setLeg('auto', this)" class="legbtn legbtn-active" id="legBtn-auto">Tự động</button>
-                    </div>
-                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-                        <button onclick="toggleCrowd(this)" class="legbtn" id="crowdBtn" style="font-size:13px;">👥 Chế độ đông người</button>
-                    </div>
-                    <p id="cameraQuality" class="quality-status" role="status" aria-live="polite">Chờ hình đủ rõ để ghi góc.</p>
-                    <img id="cameraFeed" class="video-box" alt="Hình ảnh camera theo dõi chuyển động chân"><p id="cameraStatus" role="status" style="color:var(--muted);font-size:13px;">Mở Camo Studio và ghép điện thoại, sau đó bấm Bắt đầu đo.</p>
-                    <div class="live-row">
-                        <div>Góc hiện tại: <b id="liveAngle" style="color:var(--primary);">0°</b></div>
-                        <div>Lớn nhất: <b id="maxRomSession" style="color:var(--amber);">0°</b></div>
-                    </div>
-                </div>
-
-                <!-- ===== BƯỚC 2: CẢM BIẾN IMU ===== -->
-                <div id="step2">
-                    <p style="color:var(--muted);">Cảm biến IMU · Hiệu chỉnh trước khi tập. Camera và IMU được đọc song song.</p>
-                    <!-- Chọn kiểu kết nối: BLE (mặc định), USB hoặc WiFi cũ -->
-                    <div style="display:flex; gap:8px; margin-bottom:10px;">
-                        <button onclick="setImuMode('ble', this)" class="legbtn {{ 'legbtn-active' if imu_mode == 'ble' else '' }}" id="modeBtn-ble" style="flex:1;">Bluetooth BLE</button>
-                        <button onclick="setImuMode('serial', this)" class="legbtn {{ 'legbtn-active' if imu_mode == 'serial' else '' }}" id="modeBtn-serial" style="flex:1;">🔌 USB (dây)</button>
-                        <button onclick="setImuMode('wifi', this)" class="legbtn {{ 'legbtn-active' if imu_mode == 'wifi' else '' }}" id="modeBtn-wifi" style="flex:1;">Wi-Fi cũ</button>
-                    </div>
-                    <div id="usbBox" class="{{ 'connection-visible' if imu_mode == 'serial' else 'connection-hidden' }}" style=" gap:8px; align-items:center; margin-bottom:12px;">
-                        <label for="portSelect" style="color:var(--muted); font-size:13px; white-space:nowrap;">🔌 Cổng:</label>
-                        <select id="portSelect" style="flex:1; padding:10px; border-radius:10px; background:#fff; color:var(--ink); border:1.5px solid var(--line); font-family:inherit;"></select>
-                        <button onclick="connectPort(this)" style="background:var(--primary); color:#fff; border:none; padding:9px 15px; border-radius:10px; cursor:pointer; font-weight:600; font-family:inherit;">Kết nối</button>
-                        <button onclick="loadPorts(this)" style="background:var(--soft); color:var(--ink); border:1px solid var(--line); padding:9px 13px; border-radius:10px; cursor:pointer;" title="Làm mới danh sách cổng">↻</button>
-                    </div>
-                    <div id="bleBox" class="{{ 'connection-visible' if imu_mode == 'ble' else 'connection-hidden' }}" style="gap:8px; align-items:center; margin-bottom:12px; background:var(--soft); padding:12px; border-radius:12px;">
-                        <span style="flex:1;">Bật Bluetooth trên laptop chạy KneeROM và cấp nguồn S3 <b>KneeROM_7C0A7C</b>. Giữ Wi-Fi Internet như bình thường. Bấm Bắt đầu đo để nhận cảm biến.</span>
-                        <button type="button" class="legbtn" onclick="reconnectImu(this)">Kết nối lại</button>
-                    </div>
-                    <div id="wifiBox" class="{{ 'connection-visible' if imu_mode == 'wifi' else 'connection-hidden' }}" style=" gap:8px; align-items:center; margin-bottom:12px; background:#EAF3FF; padding:12px; border-radius:12px; border:1px solid var(--line);">
-                        <span style="color:var(--primary); font-weight:700;">🛜 WiFi:</span>
-                        <span style="flex:1; color:var(--muted);">Nối máy tính vào WiFi <b style="color:var(--ink);">ACL_Knee</b> (mật khẩu <b style="color:var(--ink);">12345678</b>)</span>
-                        <button onclick="reconnectImu(this)" style="background:var(--primary); color:#fff; border:none; padding:9px 15px; border-radius:10px; cursor:pointer; font-weight:600; font-family:inherit;">Kết nối lại</button>
-                    </div>
-                    <p>Trạng thái cảm biến: <span id="imuStatus" class="status-badge">● mất kết nối</span></p>
-                    <div class="rom-text" id="liveImuAngle" style="color:var(--green);">0°</div>
-                    <p style="text-align:center; color:var(--muted); margin:0;">Lớn nhất: <span id="maxImuSession" style="color:var(--amber); font-weight:700;">0°</span></p>
-                    <p id="stability" style="text-align:center; font-weight:600; margin:12px 0;">—</p>
-                    <div class="cal-buttons">
-                        <button onclick="imuCmd('C', this)" style="background:var(--primary);">① Calib - Duỗi thẳng (C)</button>
-                        <button onclick="imuCmd('F', this)" style="background:var(--primary);">Hiệu chuẩn trục (F) · Gập-duỗi 6 giây</button>
-                        <button onclick="imuCmd('L', this)" style="background:var(--green);">② Bắt đầu ghi gập (L)</button>
-                    </div>
-                </div>
-
-                </div>
-                <button id="finishCombined" type="button" class="btn btn-success" onclick="finishCombined(this)" disabled>Hoàn tất · Lưu camera + IMU và ảnh</button>
-                <p id="combinedHint" class="measurement-guide" role="status">Bấm Bắt đầu đo để kết nối cả hai nguồn.</p>
-                <!-- ===== BƯỚC 3: SO SÁNH ===== -->
-                <div id="step3" style="display:none;">
-                    <h3 style="color:var(--primary);">Kết quả trong cùng lượt đo</h3>
-                    <div class="compare-box">
-                        <div class="compare-item">
-                            <div style="color:var(--muted);">📷 Camera</div>
-                            <div class="big" id="resCam" style="color:var(--primary);">0°</div>
-                        </div>
-                        <div class="compare-item">
-                            <div style="color:var(--muted);">🦵 Cảm biến</div>
-                            <div class="big" id="resImu" style="color:var(--green);">0°</div>
-                        </div>
-                        <div class="compare-item">
-                            <div style="color:var(--muted);">Chênh lệch</div>
-                            <div class="big" id="resDiff" style="color:var(--amber);">0°</div>
-                        </div>
-                    </div>
-                    <p id="resVerdict" style="text-align:center; font-weight:700; margin:8px 0;">—</p>
-                    <p style="color:var(--muted); text-align:center;">Đã lưu hai ROM lớn nhất của cùng lượt đo. Hai cực đại có thể xuất hiện ở hai thời điểm khác nhau.</p>
-                    <figure id="captureResult" hidden style="margin:16px 0;">
-                        <img id="captureImage" alt="Ảnh tại ROM camera lớn nhất" style="width:100%;max-height:420px;object-fit:contain;border-radius:12px;">
-                        <figcaption id="captureCaption"></figcaption>
-                        <a href="/care">Xem ảnh và phản hồi của bác sĩ</a>
-                    </figure>
-                    <button class="btn btn-profile" onclick="restart(this)">↻ Đo lại từ đầu</button>
-                </div>
+      {% include '_patient_nav.html' %}
+      <main class="patient-main" id="patient-main">
+        <div class="patient-content">
+          <header class="patient-topbar">
+            <div>
+              <h1>Phòng tập</h1>
+              <p>Tuần phục hồi {{ week }}</p>
             </div>
-
-            <div class="table-section">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
-                    <div class="table-title" style="margin:0;">📋 Nhật ký các lượt đo</div>
-                    <div style="display:flex; gap:8px;">
-                        <a href="/export_compare_me" style="background:var(--primary); color:#fff; padding:8px 14px; border-radius:10px; text-decoration:none; font-weight:600; font-size:13px;">⬇ Xuất Excel (có biểu đồ)</a>
-                        <button onclick="deleteAll(this)" style="background:#FDECEC; color:#E0413A; border:none; padding:8px 14px; border-radius:10px; cursor:pointer; font-weight:600; font-size:13px; font-family:inherit;">🗑️ Xóa tất cả</button>
+            <div class="patient-topbar-user">
+              {{ icon('user-circle') }}<span>{{ name }}</span>
+            </div>
+          </header>
+          <div class="mobile-goal">
+            {{ icon('target') }}<span>Mục tiêu hôm nay</span
+            ><strong>{{ target }}</strong>
+          </div>
+          <div class="patient-workspace">
+            <div class="measurement-column">
+              <section
+                class="portal-card measurement-card"
+                aria-labelledby="measurement-title"
+              >
+                <div class="section-heading">
+                  <h2 id="measurement-title">Camera + cảm biến</h2>
+                  <span id="imuStatus" class="status-badge" data-state="waiting"
+                    >Chưa kết nối</span
+                  >
+                </div>
+                <div
+                  id="calibBanner"
+                  class="alert alert-warning"
+                  role="status"
+                  style="display:none;"
+                >
+                  Đang hiệu chuẩn cảm biến. Giữ chân yên.
+                </div>
+                <div id="cameraPanel">
+                  <div class="measurement-toolbar">
+                    <span>Đo chân</span>
+                    <div
+                      class="segmented leg-controls"
+                      role="group"
+                      aria-label="Chân cần đo"
+                    >
+                      <button
+                        type="button"
+                        onclick="setLeg('left', this)"
+                        class="legbtn"
+                        id="legBtn-left"
+                        aria-pressed="false"
+                      >
+                        Chân trái</button
+                      ><button
+                        type="button"
+                        onclick="setLeg('right', this)"
+                        class="legbtn"
+                        id="legBtn-right"
+                        aria-pressed="false"
+                      >
+                        Chân phải</button
+                      ><button
+                        type="button"
+                        onclick="setLeg('auto', this)"
+                        class="legbtn legbtn-active"
+                        id="legBtn-auto"
+                        aria-pressed="true"
+                      >
+                        Tự động
+                      </button>
                     </div>
+                  </div>
+                  <div class="camera-stage">
+                    <img
+                      id="cameraFeed"
+                      class="video-box"
+                      alt="Hình camera theo dõi hông, gối và cổ chân"
+                    />
+                    <div class="camera-placeholder">
+                      {{ icon('camera') }}<strong>Sẵn sàng cho buổi tập</strong
+                      ><span>Camera xuất hiện khi bạn bắt đầu đo.</span>
+                    </div>
+                  </div>
+                  <p
+                    id="cameraQuality"
+                    class="quality-status"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    Giữ đủ hông, gối và cổ chân trong khung hình.
+                  </p>
+                  <div
+                    class="measurement-readings"
+                    aria-label="Hai nguồn trong cùng lượt đo"
+                  >
+                    <div>
+                      <span>Camera</span><strong id="liveAngle">—</strong
+                      ><small>ROM lớn nhất <b id="maxRomSession">—</b></small>
+                    </div>
+                    <div>
+                      <span>Cảm biến</span><strong id="liveImuAngle">—</strong
+                      ><small>ROM lớn nhất <b id="maxImuSession">—</b></small>
+                    </div>
+                  </div>
+                </div>
+                <div id="resultPanel" style="display:none;">
+                  <h3>Kết quả trong cùng lượt đo</h3>
+                  <p id="resultStatus" class="result-status" role="status"></p>
+                  <div class="compare-box">
+                    <div class="compare-item">
+                      <span>Camera</span><strong id="resCam">—</strong>
+                    </div>
+                    <div class="compare-item">
+                      <span>Cảm biến</span><strong id="resImu">—</strong>
+                    </div>
+                    <div class="compare-item">
+                      <span>Chênh lệch</span><strong id="resDiff">—</strong>
+                    </div>
+                  </div>
+                  <p id="resVerdict" class="muted"></p>
+                  <p class="measurement-note">
+                    Hai ROM lớn nhất thuộc cùng lượt tập, có thể ở hai thời điểm
+                    khác nhau.
+                  </p>
+                  <figure id="captureResult" hidden>
+                    <img id="captureImage" alt="Ảnh tại ROM camera lớn nhất" />
+                    <figcaption id="captureCaption"></figcaption>
+                    <a id="captureCareLink" href="/care" hidden
+                      >Xem ảnh và phản hồi của bác sĩ
+                      {{ icon('arrow-right') }}</a
+                    >
+                  </figure>
+                  <button
+                    type="button"
+                    class="text-button new-session"
+                    onclick="restart(this)"
+                  >
+                    {{ icon('arrow-clockwise') }}Đo lượt mới
+                  </button>
+                </div>
+                <div class="measurement-actions">
+                  <button
+                    type="button"
+                    class="portal-button primary"
+                    id="startMeasurement"
+                    onclick="startMeasurement(this)"
+                    aria-label="Bắt đầu đo camera và cảm biến"
+                  >
+                    {{ icon('play') }}<span class="desktop-control-label"
+                      >Bắt đầu đo</span
+                    ><span class="mobile-control-label">Bắt đầu</span></button
+                  ><button
+                    type="button"
+                    class="portal-button secondary"
+                    id="stopMeasurement"
+                    onclick="stopMeasurement(this)"
+                    aria-label="Dừng đo cả hai nguồn"
+                    disabled
+                  >
+                    {{ icon('stop') }}<span class="desktop-control-label"
+                      >Dừng đo</span
+                    ><span class="mobile-control-label">Dừng</span></button
+                  ><button
+                    id="finishCombined"
+                    type="button"
+                    class="portal-button secondary"
+                    onclick="finishCombined(this)"
+                    aria-label="Lưu kết quả chung"
+                    disabled
+                  >
+                    {{ icon('floppy-disk') }}<span class="desktop-control-label"
+                      >Lưu kết quả</span
+                    ><span class="mobile-control-label">Lưu</span>
+                  </button>
+                </div>
+                <p
+                  id="measurementStatus"
+                  role="status"
+                  class="measurement-note"
+                >
+                  Một lần bắt đầu cho cả camera và cảm biến.
+                </p>
+                <p id="combinedHint" class="measurement-guide" role="status">
+                  Bấm Bắt đầu đo, chờ hai nguồn sẵn sàng rồi gập và duỗi chân.
+                </p>
+                <div id="imuPanel">
+                  <details class="device-settings">
+                    <summary>
+                      {{ icon('gear') }}Thiết lập camera và cảm biến
+                      {{ icon('caret-down') }}
+                    </summary>
+                    <div class="settings-content">
+                      <div class="settings-block">
+                        <h3>Camera</h3>
+                        <p id="cameraStatus" role="status">
+                          Mở Camo Studio, ghép điện thoại và kiểm tra có hình
+                          trước khi đo.
+                        </p>
+                        <button
+                          type="button"
+                          onclick="toggleCrowd(this)"
+                          class="legbtn"
+                          id="crowdBtn"
+                          aria-pressed="false"
+                        >
+                          Chế độ đông người
+                        </button>
+                      </div>
+                      <div class="settings-block">
+                        <h3>Kết nối cảm biến</h3>
+                        <div
+                          class="segmented connection-options"
+                          role="group"
+                          aria-label="Kiểu kết nối cảm biến"
+                        >
+                          <button
+                            type="button"
+                            onclick="setImuMode('ble', this)"
+                            class="legbtn {{ 'legbtn-active' if imu_mode == 'ble' else '' }}"
+                            id="modeBtn-ble"
+                            aria-pressed="{{ 'true' if imu_mode == 'ble' else 'false' }}"
+                          >
+                            Bluetooth</button
+                          ><button
+                            type="button"
+                            onclick="setImuMode('serial', this)"
+                            class="legbtn {{ 'legbtn-active' if imu_mode == 'serial' else '' }}"
+                            id="modeBtn-serial"
+                            aria-pressed="{{ 'true' if imu_mode == 'serial' else 'false' }}"
+                          >
+                            USB</button
+                          ><button
+                            type="button"
+                            onclick="setImuMode('wifi', this)"
+                            class="legbtn {{ 'legbtn-active' if imu_mode == 'wifi' else '' }}"
+                            id="modeBtn-wifi"
+                            aria-pressed="{{ 'true' if imu_mode == 'wifi' else 'false' }}"
+                          >
+                            Wi-Fi cũ
+                          </button>
+                        </div>
+                        <div
+                          id="usbBox"
+                          class="connection-box {{ 'connection-visible' if imu_mode == 'serial' else 'connection-hidden' }}"
+                        >
+                          <label for="portSelect">Cổng USB</label
+                          ><select
+                            id="portSelect"
+                            aria-label="Chọn cổng cảm biến"
+                          ></select
+                          ><button
+                            type="button"
+                            class="legbtn"
+                            onclick="connectPort(this)"
+                          >
+                            Kết nối</button
+                          ><button
+                            type="button"
+                            class="icon-button"
+                            onclick="loadPorts(this)"
+                            aria-label="Làm mới danh sách cổng"
+                          >
+                            {{ icon('arrow-clockwise') }}
+                          </button>
+                        </div>
+                        <div
+                          id="bleBox"
+                          class="connection-box {{ 'connection-visible' if imu_mode == 'ble' else 'connection-hidden' }}"
+                        >
+                          <p>
+                            Bật Bluetooth trên máy chạy KneeROM và cấp nguồn hai
+                            cảm biến. Giữ Wi-Fi Internet như bình thường.
+                          </p>
+                          <button
+                            type="button"
+                            class="legbtn"
+                            onclick="reconnectImu(this)"
+                          >
+                            Kết nối lại
+                          </button>
+                        </div>
+                        <div
+                          id="wifiBox"
+                          class="connection-box {{ 'connection-visible' if imu_mode == 'wifi' else 'connection-hidden' }}"
+                        >
+                          <p>
+                            Chế độ cũ: máy nhận phải nối Wi-Fi ACL_Knee. Dùng
+                            Bluetooth để giữ kết nối Internet.
+                          </p>
+                          <button
+                            type="button"
+                            class="legbtn"
+                            onclick="reconnectImu(this)"
+                          >
+                            Kết nối lại
+                          </button>
+                        </div>
+                        <p id="stability" class="muted" role="status">
+                          Chưa nhận tín hiệu cảm biến.
+                        </p>
+                      </div>
+                      <div class="settings-block">
+                        <h3>Hiệu chuẩn trước buổi tập</h3>
+                        <p>
+                          Duỗi thẳng để đặt mốc, sau đó gập và duỗi chậm 6 giây
+                          để tìm trục.
+                        </p>
+                        <div class="cal-buttons">
+                          <button
+                            type="button"
+                            class="legbtn"
+                            onclick="imuCmd('C', this)"
+                          >
+                            Đặt mốc duỗi thẳng</button
+                          ><button
+                            type="button"
+                            class="legbtn"
+                            onclick="imuCmd('F', this)"
+                          >
+                            Hiệu chuẩn trục
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </section>
+              <details class="portal-card measurement-history">
+                <summary>Nhật ký các lượt đo {{ icon('caret-down') }}</summary>
+                <div class="history-actions">
+                  <a class="text-button" href="/export_compare_me"
+                    >{{ icon('download-simple') }}Xuất Excel</a
+                  ><button
+                    type="button"
+                    class="text-button danger"
+                    onclick="deleteAll(this)"
+                  >
+                    Xóa tất cả
+                  </button>
                 </div>
                 <div class="table-scroll">
-                    <table id="realtime-log-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 50px; text-align: center;">STT</th>
-                                <th>Thời điểm</th>
-                                <th style="text-align: center;">Góc ROM</th>
-                                <th style="text-align: center;">Nguồn</th>
-                                <th style="width: 50px; text-align: center;">Xóa</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% if history %}
-                                {% for row in history %}
-                                <tr>
-                                    <td style="text-align: center; font-weight: bold; color: var(--muted);">{{ loop.index }}</td>
-                                    <td>{{ row[1] }}</td>
-                                    <td style="text-align: center; color: var(--green); font-weight: bold;">{{ row[0] }}°</td>
-                                    <td style="text-align: center; color: var(--muted);">{{ '🦵 Cảm biến' if row[2] == 'imu' else '📷 Camera' }}</td>
-                                    <td style="text-align: center;"><button data-measurement-id="{{ row[3] }}" onclick="deleteMeasurement(this.dataset.measurementId, this)" style="background:none; border:none; cursor:pointer; font-size:16px;" title="Xóa lượt đo này">🗑️</button></td>
-                                </tr>
-                                {% endfor %}
-                            {% else %}
-                                <tr id="no-data-row">
-                                    <td colspan="5" style="text-align: center; color: var(--muted); padding: 20px;">Chưa có lượt đo nào.</td>
-                                </tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
+                  <table id="realtime-log-table">
+                    <thead>
+                      <tr>
+                        <th>STT</th>
+                        <th>Thời điểm</th>
+                        <th>Góc ROM</th>
+                        <th>Nguồn</th>
+                        <th>Xóa</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for row in history %}<tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ row[1] }}</td>
+                        <td>{{ row[0] }}°</td>
+                        <td>
+                          {{ 'Cảm biến' if row[2] == 'imu' else 'Camera' }}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            class="icon-button danger"
+                            data-measurement-id="{{ row[3] }}"
+                            onclick="deleteMeasurement(this.dataset.measurementId, this)"
+                            aria-label="Xóa lượt đo này"
+                          >
+                            {{ icon('trash') }}
+                          </button>
+                        </td>
+                      </tr>{% else %}<tr id="no-data-row">
+                        <td colspan="5" class="empty-state">
+                          Chưa có lượt đo nào.
+                        </td>
+                      </tr>{% endfor %}
+                    </tbody>
+                  </table>
                 </div>
+              </details>
             </div>
+            <aside class="patient-plan" aria-label="Kế hoạch và hồ sơ">
+              <section class="portal-card plan-card">
+                <h2>Kế hoạch hôm nay</h2>
+                <dl class="plan-facts">
+                  <div>
+                    <dt>Mục tiêu ROM</dt>
+                    <dd>{{ target }}</dd>
+                  </div>
+                  <div>
+                    <dt>Giai đoạn</dt>
+                    <dd>{{ phase }}</dd>
+                  </div>
+                </dl>
+                <a class="care-link" href="/care"
+                  >{{ icon('stethoscope') }}<span>Theo dõi cùng bác sĩ</span
+                  >{{ icon('arrow-right') }}</a
+                >
+                <details class="plan-advice">
+                  <summary>Hướng dẫn buổi tập {{ icon('caret-down') }}</summary>
+                  <p>{{ recommendation.muc_tieu }}</p>
+                  <ul>
+                    {% for advice in recommendation.loi_khuyen %}<li>
+                      {{ advice }}
+                    </li>{% endfor %}
+                  </ul>
+                </details>
+              </section>
+              <section class="portal-card recent-measurements">
+                <h2>Buổi đo gần nhất</h2>
+                {% for row in history[:3] %}<div class="recent-row">
+                  <span
+                    ><time>{{ row[1][:10] }}</time
+                    ><small
+                      >{{ 'Cảm biến' if row[2] == 'imu' else 'Camera' }}</small
+                    ></span
+                  ><strong>{{ row[0] }}°</strong>
+                </div>{% else %}<p class="muted">
+                  Kết quả sẽ xuất hiện sau buổi đo đầu tiên.
+                </p>{% endfor %}<a class="text-button" href="/my_records"
+                  >Xem hồ sơ đo {{ icon('arrow-right') }}</a
+                >
+              </section>
+            </aside>
+          </div>
         </div>
-
-        <div style="display:flex; flex-direction:column; gap:24px;">
-            <div class="card patient-summary">
-                <span class="section-kicker">Kế hoạch cá nhân</span>
-                <h3 class="patient-name">{{ name }}</h3>
-                <div class="patient-meta">{{ age }} tuổi · Tuần phục hồi {{ week }}</div>
-                <div class="target-card"><small>Biên độ mục tiêu</small><strong>{{ target }}</strong></div>
-                <p>Giai đoạn: <b style="color:var(--primary);">{{ phase }}</b></p>
-                <p>Định hướng điều trị: <span style="color:var(--muted);">{{ recommendation.muc_tieu }}</span></p>
-                <p><b>Lời khuyên cho buổi tập:</b></p>
-                <ul>
-                    {% for advice in recommendation.loi_khuyen %}
-                        <li>{{ advice }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-
-            <div class="quick-actions">
-                <a href="/my_records" class="btn" style="flex:1; background:var(--teal); color:#fff;">Hồ sơ</a>
-                <a href="/care" class="btn" style="flex:1; background:linear-gradient(135deg,#7C3AED,#4F46E5); color:#fff;">Ảnh tiến triển</a>
-                <a href="/profile" class="btn btn-profile" style="flex:1;">Tiến trình</a>
-            </div>
-        </div>
-                </div>
-            </div>
-        </main>
+      </main>
     </div>
-
-    <script src="{{ url_for('static', filename='dashboard.js', v='ble-combined-20261104') }}" defer></script>
-</body>
+  </body>
 </html>
