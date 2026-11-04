@@ -78,6 +78,7 @@ async function login(page, role) {
       failures.push(response.status() + " " + response.url());
   });
   for (const [width, height, label] of [
+    [1920, 1080, "wide"],
     [1440, 1000, "desktop"],
     [1024, 768, "laptop"],
     [390, 844, "mobile"],
@@ -104,7 +105,7 @@ async function login(page, role) {
     assert.equal(await page.locator(".auth-brand-doctor").isVisible(), true);
     assert.equal(await page.locator(".auth-brand-patient").isVisible(), false);
     await page
-      .locator(".auth-wallpaper img")
+      .locator(".auth-wallpaper > img, .auth-wallpaper > svg")
       .evaluateAll((images) =>
         Promise.all(
           images.flatMap((image) =>
@@ -274,8 +275,8 @@ async function login(page, role) {
     path.join(out, "report.json"),
     JSON.stringify(
       {
-        screens: 12,
-        viewports: [320, 390, 1024, 1440],
+        screens: 14,
+        viewports: [320, 390, 1024, 1440, 1920],
         checks: [
           "separate logins",
           "registration",
@@ -295,7 +296,7 @@ async function login(page, role) {
     ),
   );
   console.log(
-    "PASS: responsive UI at 320/390/1024/1440 px; login/register; one shared measurement; doctor search and chart; no browser errors.",
+    "PASS: responsive login at 320/390/1024/1440/1920 px; login/register; one shared measurement; doctor search and chart; no browser errors.",
   );
 })().catch((error) => {
   console.error(error);

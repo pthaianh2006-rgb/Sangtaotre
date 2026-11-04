@@ -19,7 +19,7 @@
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='portal-ui.css', v='login-wallpaper-visible-4') }}"
+      href="{{ url_for('static', filename='portal-ui.css', v='login-clean-background-6') }}"
     />
     <script src="{{ url_for('static', filename='rehab.js') }}" defer></script>
     <script
@@ -33,15 +33,82 @@
   >
     <a class="skip-link" href="#auth-main">Đến phần đăng nhập</a>
     <div class="auth-wallpaper" aria-hidden="true">
-      <img class="auth-wallpaper-patient" src="{{ url_for('static', filename='brand/patient-background.png') }}" alt="" width="4536" height="4536" decoding="async" />
-      <img class="auth-wallpaper-doctor" src="{{ url_for('static', filename='brand/doctor-background.png') }}" alt="" width="4537" height="4536" decoding="async" />
+      <img
+        class="auth-wallpaper-patient"
+        src="{{ url_for('static', filename='brand/patient-background.png') }}"
+        alt=""
+        width="4536"
+        height="4536"
+        decoding="async"
+      />
+      <svg
+        class="auth-wallpaper-doctor"
+        viewBox="0 0 4537 4536"
+        preserveAspectRatio="xMidYMid slice"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <defs>
+          <filter
+            id="doctor-wallpaper-feather"
+            x="-20%"
+            y="-20%"
+            width="140%"
+            height="140%"
+          >
+            <feGaussianBlur stdDeviation="32" />
+          </filter>
+          <mask
+            id="doctor-wallpaper-cutout"
+            maskUnits="userSpaceOnUse"
+            x="0"
+            y="0"
+            width="4537"
+            height="4536"
+            style="mask-type: luminance"
+          >
+            <rect width="4537" height="4536" fill="white" />
+            <!-- Remove only the central badge printed into the source background. -->
+            <rect
+              x="1220"
+              y="1220"
+              width="2097"
+              height="2097"
+              fill="black"
+              filter="url(#doctor-wallpaper-feather)"
+            />
+          </mask>
+        </defs>
+        <image
+          href="{{ url_for('static', filename='brand/doctor-background.png') }}"
+          width="4537"
+          height="4536"
+          mask="url(#doctor-wallpaper-cutout)"
+        />
+      </svg>
     </div>
     <header class="auth-header">{{ brand('/', '') }}</header>
     <main class="auth-layout" id="auth-main">
-      <section class="auth-intro auth-intro-branded" aria-label="Giới thiệu KneeROM">
+      <section
+        class="auth-intro auth-intro-branded"
+        aria-label="Giới thiệu KneeROM"
+      >
         <div class="auth-brand-art">
-          <img class="auth-brand-patient" src="{{ url_for('static', filename='brand/patient-logo.png') }}" alt="Logo KneeROM dành cho bệnh nhân" width="2268" height="2268" fetchpriority="high" />
-          <img class="auth-brand-doctor" src="{{ url_for('static', filename='brand/doctor-logo.png') }}" alt="Logo KneeROM dành cho bác sĩ" width="2269" height="2268" />
+          <img
+            class="auth-brand-patient"
+            src="{{ url_for('static', filename='brand/patient-logo.png') }}"
+            alt="Logo KneeROM dành cho bệnh nhân"
+            width="2268"
+            height="2268"
+            fetchpriority="high"
+          />
+          <img
+            class="auth-brand-doctor"
+            src="{{ url_for('static', filename='brand/doctor-logo.png') }}"
+            alt="Logo KneeROM dành cho bác sĩ"
+            width="2269"
+            height="2268"
+          />
         </div>
         <h2>Theo dõi phục hồi<br />khớp gối.</h2>
         <p>
@@ -53,9 +120,9 @@
         <p class="auth-subtitle" id="auth-subtitle">
           Chọn cổng tài khoản để tiếp tục.
         </p>
-        {% if msg %}<div class="alert alert-{{ category }}" role="alert">
-          {{ msg }}
-        </div>{% endif %}
+        {% if msg %}
+          <div class="alert alert-{{ category }}" role="alert">{{ msg }}</div>
+        {% endif %}
         <div class="tabs auth-tabs" role="tablist" aria-label="Cổng tài khoản">
           <button
             type="button"

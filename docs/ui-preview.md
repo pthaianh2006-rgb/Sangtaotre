@@ -55,3 +55,4 @@ Mặc định dùng Edge trên Windows. Có thể đặt `UI_BROWSER_PATH`, `UI_
 - `aclproject2-main/aclproject2-main/dashboard.html`: trang bệnh nhân.
 - `aclproject2-main/aclproject2-main/admin_dashboard.html`: trang bác sĩ.
 - `aclproject2-main/aclproject2-main/static/portal-ui.css`: màu, bố cục và responsive.
+- `static/auth-ui.js` trong cùng thư mục ứng dụng: chuyển tab và chữ động. Trong CSS, `.auth-wallpaper` điều khiển nền y tế, `.auth-panel::before` điều khiển nền trắng phía sau form. Phần `doctor-wallpaper-cutout` trong `home.html` ẩn khung lớn in sẵn trong ảnh background theo đúng tọa độ ảnh, đã kiểm tra thêm ở 1920 px.

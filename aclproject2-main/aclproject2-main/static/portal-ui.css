@@ -2419,7 +2419,8 @@ body.patient-portal-page {
   overflow: hidden;
   pointer-events: none;
 }
-.auth-wallpaper img {
+.auth-wallpaper > img,
+.auth-wallpaper > svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2445,6 +2446,11 @@ body.patient-portal-page {
 .auth-intro-branded .auth-brand-art {
   background: transparent;
   mix-blend-mode: multiply;
+}
+.page-auth[data-portal="doctor"] .auth-brand-art {
+  /* Keep the foreground badge opaque; crop only the source's white margin. */
+  mix-blend-mode: normal;
+  clip-path: inset(3% round 8%);
 }
 .page-auth .auth-panel {
   position: relative;
@@ -2473,7 +2479,8 @@ body.patient-portal-page {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .auth-wallpaper img {
+  .auth-wallpaper > img,
+  .auth-wallpaper > svg {
     transition: none;
   }
 }
